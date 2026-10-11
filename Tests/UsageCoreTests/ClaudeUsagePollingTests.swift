@@ -154,6 +154,32 @@ struct ClaudeUsagePollingTests {
         #expect(due(polling, .popover, from: start) == wait)
     }
 
+    @Test(
+        "Retry-After is read as seconds or as an HTTP date",
+        arguments: [
+            ("1800", 1800.0),
+            ("0", 0.0),
+            // `start` is 06:24:52 GMT.
+            ("Sun, 11 Oct 2026 06:54:52 GMT", 1800.0),
+            ("Sun, 11 Oct 2026 06:00:00 GMT", 0.0),  // already passed
+        ] as [(String, TimeInterval)]
+    )
+    func retryAfterHeader(header: String, seconds: TimeInterval) {
+        #expect(ClaudeUsagePolling.retryAfter(header: header, at: start) == seconds)
+    }
+
+    @Test("a Retry-After that's neither seconds nor an HTTP date is ignored", arguments: ["", "soon", "-5", "nan", "inf", "1e400"])
+    func unreadableRetryAfter(header: String) {
+        #expect(ClaudeUsagePolling.retryAfter(header: header, at: start) == nil)
+    }
+
+    @Test("an HTTP-date Retry-After holds polling off until then")
+    func retryAfterDate() {
+        let retryAfter = ClaudeUsagePolling.retryAfter(header: "Sun, 11 Oct 2026 06:54:52 GMT", at: start)
+        let polling = finished(with: .response(status: 429, body: Data(), retryAfter: retryAfter))
+        #expect(due(polling, .popover, from: start) == 1800)
+    }
+
     @Test("no saved login backs off too, so a denied Keychain prompt doesn't come back every 5 minutes")
     func noCredentialsBackoff() {
         let polling = finished(with: .noCredentials)

@@ -84,9 +84,7 @@ final class ClaudeUsageMonitor {
         do {
             let (body, response) = try await session.data(for: request, delegate: RefuseRedirects())
             guard let http = response as? HTTPURLResponse else { return .networkError }
-            let retryAfter = http.value(forHTTPHeaderField: "Retry-After")
-                .flatMap(TimeInterval.init)
-                .flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            let retryAfter = ClaudeUsagePolling.retryAfter(header: http.value(forHTTPHeaderField: "Retry-After"), at: Date())
             return .response(status: http.statusCode, body: body, retryAfter: retryAfter)
         } catch {
             return .networkError

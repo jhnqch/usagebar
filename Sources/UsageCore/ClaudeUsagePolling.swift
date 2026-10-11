@@ -122,6 +122,25 @@ public struct ClaudeUsagePolling: Sendable {
         backoffs = 0
         notBefore = nil
     }
+
+    /// A `Retry-After` header as a wait in seconds from `now`: either whole
+    /// seconds (`120`) or an HTTP date (`Sun, 11 Oct 2026 07:28:00 GMT`; 0
+    /// once passed). Nil when it's neither.
+    public static func retryAfter(header: String?, at now: Date) -> TimeInterval? {
+        guard let value = header?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
+        if value.allSatisfy(\.isASCIIDigit) {
+            return TimeInterval(value)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return formatter.date(from: value).map { max(0, $0.timeIntervalSince(now)) }
+    }
+}
+
+private extension Character {
+    var isASCIIDigit: Bool { isASCII && isWholeNumber }
 }
 
 // MARK: - Recorded polls
