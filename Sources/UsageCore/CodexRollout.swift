@@ -25,7 +25,8 @@ public enum CodexRollout {
     /// sends again adds nothing. Where there's no earlier total (a file's
     /// first count, which may carry usage from before the file), or the
     /// total went down (it started over), the response's own usage counts;
-    /// a count with no running total adds its response's usage to the last.
+    /// a count whose running total is missing or unreadable adds its
+    /// response's usage to the last total.
     public struct Parser: UsageLogParser {
         /// Names the file's entries: its thread id once `session_meta` is
         /// read, else its file name. A file read again, or moved (as
@@ -98,7 +99,7 @@ public enum CodexRollout {
     }
 
     /// Token counts as Codex logs them.
-    struct Usage: Equatable, Sendable, Decodable {
+    struct Usage: Equatable, Sendable {
         /// Every input token, cached or not.
         var input: Int
         /// Input read from the cache.
@@ -152,12 +153,37 @@ public enum CodexRollout {
             self.output = output
         }
 
-        init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            input = tokenCount(c, .input)
-            cached = tokenCount(c, .cached)
-            cacheWrite = tokenCount(c, .cacheWrite)
-            output = tokenCount(c, .output)
+        /// A response's own usage: a missing or mistyped count reads as
+        /// zero, so it costs only what it carries.
+        struct Lenient: Decodable {
+            var usage: Usage
+
+            init(from decoder: any Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                usage = Usage(input: tokenCount(c, .input), cached: tokenCount(c, .cached),
+                              cacheWrite: tokenCount(c, .cacheWrite), output: tokenCount(c, .output))
+            }
+        }
+
+        /// A running total, which every later response is measured against:
+        /// unreadable unless it has input and output counts and every count
+        /// it has is a whole number, never negative. A count read as zero
+        /// would look like the total starting over.
+        struct Strict: Decodable {
+            var usage: Usage
+
+            private struct Unreadable: Error {}
+
+            init(from decoder: any Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                usage = Usage(
+                    input: try c.decode(Int.self, forKey: .input),
+                    cached: try c.decodeIfPresent(Int.self, forKey: .cached) ?? 0,
+                    cacheWrite: try c.decodeIfPresent(Int.self, forKey: .cacheWrite) ?? 0,
+                    output: try c.decode(Int.self, forKey: .output)
+                )
+                guard min(usage.input, usage.cached, usage.cacheWrite, usage.output) >= 0 else { throw Unreadable() }
+            }
         }
     }
 
@@ -202,8 +228,8 @@ public enum CodexRollout {
                     return
                 }
                 kind = .tokenCount(
-                    total: try? info.decodeIfPresent(Usage.self, forKey: .total),
-                    last: try? info.decodeIfPresent(Usage.self, forKey: .last)
+                    total: (try? info.decodeIfPresent(Usage.Strict.self, forKey: .total))?.usage,
+                    last: (try? info.decodeIfPresent(Usage.Lenient.self, forKey: .last))?.usage
                 )
             default:
                 kind = .other

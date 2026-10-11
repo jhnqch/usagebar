@@ -104,6 +104,19 @@ struct CodexRolloutTests {
         #expect(entries.map(\.tokens.input) == [1_000, 200, 300])
     }
 
+    @Test("a running total that can't be read isn't taken for a reset: its response's own usage moves the total on")
+    func unreadableTotal() throws {
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-1", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 1_000), last: codexTokens(input: 1_000)),
+            Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00",
+                               total: ["input_tokens": "1100", "output_tokens": 0], last: codexTokens(input: 100)),
+            Rollout.tokenCount(at: "2026-10-09T10:00:12-07:00", total: codexTokens(input: 1_200), last: codexTokens(input: 100)),
+        ]])
+        #expect(entries.map(\.tokens.input) == [1_000, 100, 100])
+    }
+
     @Test("a file whose first running total carries earlier usage counts only that response's own")
     func carriedTotal() throws {
         let entries = codexUsage([[
@@ -122,8 +135,9 @@ struct CodexRolloutTests {
             // A usage before any turn says its model is "unknown".
             #"{"timestamp":"2026-10-09T17:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"output_tokens":10},"last_token_usage":{"input_tokens":1000,"output_tokens":10}}}}"#,
             #"{"timestamp":"2026-10-09T17:00:02.000Z","type":"turn_context","payload":{"model":"gpt-6-astra","extra":{"x":1}}}"#,
-            // A mistyped count reads as zero; the others still count.
-            #"{"timestamp":"2026-10-09T17:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":3000,"output_tokens":"lots"}}}}"#,
+            // A mistyped running total can't be trusted, so the response's
+            // own usage counts, where a mistyped count reads as zero.
+            #"{"timestamp":"2026-10-09T17:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":3000,"output_tokens":"lots"},"last_token_usage":{"input_tokens":2000,"output_tokens":"lots"}}}}"#,
             // A turn whose model can't be read keeps the last one.
             #"{"timestamp":"2026-10-09T17:00:04.000Z","type":"turn_context","payload":{"model":7}}"#,
             // No running total: the response's own usage counts.
