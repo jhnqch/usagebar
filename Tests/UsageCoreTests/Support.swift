@@ -29,7 +29,6 @@ func claude(
     weeklyResetsAt: Date = date("2026-10-13T07:00:00-07:00")
 ) -> ClaudeLimits {
     ClaudeLimits(
-        plan: "Max",
         capturedAt: date("2026-10-10T14:37:00-07:00"),
         fiveHour: fiveHour.map { LimitReading(usedPercent: $0, resetsAt: fiveHourResetsAt) },
         sevenDay: weekly.map { LimitReading(usedPercent: $0, resetsAt: weeklyResetsAt) },

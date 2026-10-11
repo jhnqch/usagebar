@@ -2,8 +2,8 @@
   "now": "2026-10-10T14:40:00-07:00",
   "timeZone": "America/Los_Angeles",
   "readings": {
+    "claudePlan": "Max",
     "claude": {
-      "plan": "Max",
       "sevenDayFable": {
         "usedPercent": 34,
         "resetsAt": "2026-10-16T00:00:00-07:00"

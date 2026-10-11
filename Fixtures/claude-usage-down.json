@@ -1,0 +1,36 @@
+{
+  "now": "2026-10-10T23:25:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "claudePlan": "Max",
+    "claudeUsagePolls": [
+      {
+        "receivedAt": "2026-10-10T23:24:52-07:00",
+        "status": 503,
+        "body": "<html><body>503 Service Unavailable</body></html>"
+      }
+    ],
+    "claudeStatusLine": {
+      "capturedAt": "2026-10-10T22:45:53-07:00",
+      "fiveHour": {
+        "usedPercent": 19,
+        "resetsAt": "2026-10-11T01:50:00-07:00"
+      },
+      "sevenDay": {
+        "usedPercent": 11,
+        "resetsAt": "2026-10-16T00:00:00-07:00"
+      }
+    },
+    "codex": {
+      "plan": "pro",
+      "capturedAt": "2026-10-10T23:25:00-07:00",
+      "windows": [
+        {
+          "usedPercent": 13,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-15T13:16:00-07:00"
+        }
+      ]
+    }
+  }
+}

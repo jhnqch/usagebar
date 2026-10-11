@@ -36,7 +36,7 @@ public enum UsageEngine {
                 codex: labelPart(codexWindows.compactMap(\.reading), clock: clock)
             ),
             claude: ServiceSection(
-                plan: claude?.plan.map(planBadge),
+                plan: readings.claudePlan.map(planBadge),
                 updatedText: [statusLine?.capturedAt, claude?.capturedAt].compactMap(\.self).max().map { clock.updatedText($0) },
                 meters: claudeWindows.map { meter($0, clock: clock) },
                 note: nil

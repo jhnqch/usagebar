@@ -118,3 +118,87 @@ public struct ClaudeUsagePolling: Sendable {
         notBefore = nil
     }
 }
+
+// MARK: - Recorded polls
+
+extension ClaudeUsagePolling {
+    /// One recorded request: when its answer arrived and what it was.
+    ///
+    /// ```json
+    /// { "receivedAt": "…", "status": 200, "body": { …the response… } }
+    /// { "receivedAt": "…", "status": 503, "body": "<html>…</html>", "retryAfter": 60 }
+    /// { "receivedAt": "…", "failure": "network" }        // or "noCredentials"
+    /// ```
+    ///
+    /// A `body` that's a JSON string is the body's text as is; anything else
+    /// is the body's JSON.
+    struct RecordedPoll: Decodable {
+        var receivedAt: Date
+        var outcome: Outcome
+
+        private enum CodingKeys: String, CodingKey {
+            case receivedAt, status, body, retryAfter, failure
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            receivedAt = try c.decode(Date.self, forKey: .receivedAt)
+            if let status = try c.decodeIfPresent(Int.self, forKey: .status) {
+                let body: Data = if let text = try? c.decode(String.self, forKey: .body) {
+                    Data(text.utf8)
+                } else if let json = try c.decodeIfPresent(JSONValue.self, forKey: .body) {
+                    try JSONEncoder().encode(json)
+                } else {
+                    Data()
+                }
+                outcome = .response(status: status, body: body, retryAfter: try c.decodeIfPresent(Double.self, forKey: .retryAfter))
+            } else {
+                outcome = try c.decode(String.self, forKey: .failure) == "noCredentials" ? .noCredentials : .networkError
+            }
+        }
+    }
+
+    /// The endpoint's reading after these requests, in order, from launch.
+    static func replay(_ polls: [RecordedPoll]) -> ClaudeLimits? {
+        var polling = ClaudeUsagePolling()
+        for poll in polls {
+            polling.start(at: poll.receivedAt)
+            polling.finish(poll.outcome, at: poll.receivedAt)
+        }
+        return polling.reading
+    }
+}
+
+/// Any JSON value, to carry a recorded body through a fixture unchanged.
+private enum JSONValue: Codable {
+    case null, bool(Bool), number(Double), string(String), array([JSONValue]), object([String: JSONValue])
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() {
+            self = .null
+        } else if let value = try? c.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? c.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? c.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? c.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            self = .object(try c.decode([String: JSONValue].self))
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case let .bool(value): try c.encode(value)
+        case let .number(value): try c.encode(value)
+        case let .string(value): try c.encode(value)
+        case let .array(value): try c.encode(value)
+        case let .object(value): try c.encode(value)
+        }
+    }
+}

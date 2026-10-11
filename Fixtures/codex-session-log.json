@@ -2,8 +2,8 @@
   "now": "2026-10-04T20:24:00-07:00",
   "timeZone": "America/Los_Angeles",
   "readings": {
+    "claudePlan": "Max",
     "claude": {
-      "plan": "Max",
       "capturedAt": "2026-10-04T20:21:00-07:00",
       "fiveHour": {
         "usedPercent": 42,

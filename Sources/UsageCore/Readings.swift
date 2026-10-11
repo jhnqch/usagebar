@@ -3,8 +3,11 @@ import Foundation
 /// The latest raw readings from every source. The engine turns these, plus a
 /// clock, into a `UsageSnapshot`. A missing reading means "no data".
 public struct Readings: Decodable, Equatable, Sendable {
-    /// Claude limits from the usage endpoint (today, the bundled sample):
-    /// the only source for Fable, and the plan.
+    /// Claude's plan name for the badge, e.g. "Max". Neither Claude
+    /// source reports it, so the app bundles it.
+    public var claudePlan: String?
+    /// Claude limits from the usage endpoint: the only source for Fable, and
+    /// server-side, so they include the desktop app and claude.ai.
     public var claude: ClaudeLimits?
     /// Claude's 5-hour and weekly limits from the status line file, the
     /// live source while Claude Code is in use.
@@ -17,11 +20,13 @@ public struct Readings: Decodable, Equatable, Sendable {
     public var codexSessionLog: CodexLimits?
 
     public init(
+        claudePlan: String? = nil,
         claude: ClaudeLimits? = nil,
         claudeStatusLine: ClaudeLimits? = nil,
         codex: CodexLimits? = nil,
         codexSessionLog: CodexLimits? = nil
     ) {
+        self.claudePlan = claudePlan
         self.claude = claude
         self.claudeStatusLine = claudeStatusLine
         self.codex = codex
@@ -43,8 +48,6 @@ public struct LimitReading: Decodable, Equatable, Sendable {
 
 /// Claude's limit windows: 5-hour session, weekly (all models), weekly Fable.
 public struct ClaudeLimits: Decodable, Equatable, Sendable {
-    /// Plan name, e.g. "Max".
-    public var plan: String?
     /// When the source took the reading; nil when it isn't readable.
     public var capturedAt: Date?
     public var fiveHour: LimitReading?
@@ -52,13 +55,11 @@ public struct ClaudeLimits: Decodable, Equatable, Sendable {
     public var sevenDayFable: LimitReading?
 
     public init(
-        plan: String? = nil,
         capturedAt: Date?,
         fiveHour: LimitReading? = nil,
         sevenDay: LimitReading? = nil,
         sevenDayFable: LimitReading? = nil
     ) {
-        self.plan = plan
         self.capturedAt = capturedAt
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
@@ -102,6 +103,7 @@ public struct CodexWindow: Equatable, Sendable {
 extension Readings {
     func shifted(by offset: TimeInterval) -> Readings {
         Readings(
+            claudePlan: claudePlan,
             claude: claude?.shifted(by: offset),
             claudeStatusLine: claudeStatusLine?.shifted(by: offset),
             codex: codex?.shifted(by: offset),
@@ -119,7 +121,6 @@ extension LimitReading {
 extension ClaudeLimits {
     func shifted(by offset: TimeInterval) -> ClaudeLimits {
         ClaudeLimits(
-            plan: plan,
             capturedAt: capturedAt.map { $0 + offset },
             fiveHour: fiveHour?.shifted(by: offset),
             sevenDay: sevenDay?.shifted(by: offset),
@@ -148,7 +149,9 @@ extension CodexLimits {
 
 extension Readings {
     private enum CodingKeys: String, CodingKey {
-        case claude, claudeStatusLine, codex, codexSessionLog
+        case claudePlan, claude, claudeStatusLine, codex, codexSessionLog
+        /// Recorded usage-endpoint answers, replayed into `claude`.
+        case claudeUsagePolls
         /// Recorded status line JSON, run through the status line command
         /// into `claudeStatusLine`.
         case claudeStatusLineInputs
@@ -179,7 +182,10 @@ extension Readings {
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        claude = try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claude)
+        claudePlan = try? c.decodeIfPresent(String.self, forKey: .claudePlan)
+        claude = (try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claude))
+            ?? (try? c.decodeIfPresent([Lenient<ClaudeUsagePolling.RecordedPoll>].self, forKey: .claudeUsagePolls))
+                .flatMap { ClaudeUsagePolling.replay($0.compactMap(\.value)) }
         claudeStatusLine = (try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claudeStatusLine))
             ?? (try? c.decodeIfPresent([ClaudeStatusLine.RecordedInput].self, forKey: .claudeStatusLineInputs))
                 .flatMap(ClaudeStatusLine.replay)
@@ -193,12 +199,11 @@ extension Readings {
 
 extension ClaudeLimits {
     private enum CodingKeys: String, CodingKey {
-        case plan, capturedAt, fiveHour, sevenDay, sevenDayFable
+        case capturedAt, fiveHour, sevenDay, sevenDayFable
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        plan = try? c.decodeIfPresent(String.self, forKey: .plan)
         capturedAt = try? c.decodeIfPresent(Date.self, forKey: .capturedAt)
         fiveHour = try? c.decodeIfPresent(LimitReading.self, forKey: .fiveHour)
         sevenDay = try? c.decodeIfPresent(LimitReading.self, forKey: .sevenDay)

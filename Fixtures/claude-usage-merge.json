@@ -1,0 +1,44 @@
+{
+  "now": "2026-10-10T23:30:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "claudePlan": "Max",
+    "claude": {
+      "capturedAt": "2026-10-10T23:24:52-07:00",
+      "fiveHour": {
+        "usedPercent": 26,
+        "resetsAt": "2026-10-11T01:50:00-07:00"
+      },
+      "sevenDay": {
+        "usedPercent": 12,
+        "resetsAt": "2026-10-16T00:00:00-07:00"
+      },
+      "sevenDayFable": {
+        "usedPercent": 0,
+        "resetsAt": "2026-10-16T00:00:00-07:00"
+      }
+    },
+    "claudeStatusLine": {
+      "capturedAt": "2026-10-10T23:30:00-07:00",
+      "fiveHour": {
+        "usedPercent": 19,
+        "resetsAt": "2026-10-11T01:50:00-07:00"
+      },
+      "sevenDay": {
+        "usedPercent": 11,
+        "resetsAt": "2026-10-16T00:00:00-07:00"
+      }
+    },
+    "codex": {
+      "plan": "pro",
+      "capturedAt": "2026-10-10T23:30:00-07:00",
+      "windows": [
+        {
+          "usedPercent": 13,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-15T13:16:00-07:00"
+        }
+      ]
+    }
+  }
+}

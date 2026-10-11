@@ -140,4 +140,21 @@ struct FixtureTests {
         #expect(snapshot.codex.meters.map(\.label) == ["5-hour session", "Weekly"])
         #expect(snapshot.codex.meters.map(\.percentText) == ["38%", "6%"])
     }
+
+    @Test(
+        "a fixture can carry recorded usage-endpoint polls, replayed as the app handles them",
+        arguments: [
+            ("claude-usage", "✳ 26% · ⌘ 13%", ["26%", "12%", "0%"], "Updated just now"),
+            ("claude-usage-down", "✳ 19% · ⌘ 13%", ["19%", "11%", "—"], "Updated 39 min ago"),
+            ("claude-usage-merge", "✳ 26% · ⌘ 13%", ["26%", "12%", "0%"], "Updated just now"),
+        ]
+    )
+    func recordedUsagePolls(name: String, menuBar: String, percents: [String], updated: String) throws {
+        let fixture = try loadFixture(name)
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        #expect(snapshot.menuBar.text == menuBar)
+        #expect(snapshot.claude.meters.map(\.percentText) == percents)
+        #expect(snapshot.claude.updatedText == updated)
+        #expect(snapshot.claude.plan == "Max")
+    }
 }

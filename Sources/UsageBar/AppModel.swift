@@ -44,19 +44,15 @@ final class AppModel {
     }
 }
 
-/// The Claude readings bundled with the app until the usage endpoint lands
-/// (ticket #5): the plan and the Fable window from the recorded sample,
-/// shifted so they read as fresh at launch. Claude's 5-hour and weekly
-/// windows are live from the status line and Codex is live, so the sample's
-/// numbers for those are dropped. A sample has no real capture time.
+/// What the app bundles: Claude's plan for the badge, from the recorded
+/// sample. Neither Claude source reports the plan; every limit is live.
 enum SampleReadings {
-    static func load(now: Date = Date()) -> Readings {
+    static func load() -> Readings {
         guard
             let url = Bundle.main.url(forResource: "sample", withExtension: "json"),
             let data = try? Data(contentsOf: url),
             let fixture = try? Fixture.decode(data)
         else { return Readings() }
-        let sample = fixture.readings(rebasedTo: now).claude
-        return Readings(claude: ClaudeLimits(plan: sample?.plan, capturedAt: nil, sevenDayFable: sample?.sevenDayFable))
+        return Readings(claudePlan: fixture.readings.claudePlan)
     }
 }
