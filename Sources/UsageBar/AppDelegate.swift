@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let codex: CodexMonitor
     private let claudeStatusLine: ClaudeStatusLineMonitor
+    private let claudeUsage: ClaudeUsageMonitor
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "menu-bar")
@@ -17,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.model = model
         codex = CodexMonitor(model: model)
         claudeStatusLine = ClaudeStatusLineMonitor(model: model)
+        claudeUsage = ClaudeUsageMonitor(model: model)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -35,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.refresh()
         model.startTicking()
         claudeStatusLine.start()
+        claudeUsage.start()
         codex.start()
 
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -50,11 +53,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // No orphaned app-server after quitting.
         codex.stop()
         claudeStatusLine.stop()
+        claudeUsage.stop()
     }
 
     private func refresh(force: Bool) {
         model.refresh()
         claudeStatusLine.refresh()
+        // Even Refresh asks the rate-limited usage endpoint at most once a minute.
+        claudeUsage.refresh()
         codex.refresh(force: force)
     }
 
