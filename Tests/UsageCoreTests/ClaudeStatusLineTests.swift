@@ -107,6 +107,31 @@ struct ClaudeStatusLineTests {
         #expect(section.menuBar.claude.text == "11%")
     }
 
+    @Test("after a good reading, a window that turns unreadable shows a dash, not its old numbers")
+    func unreadableAfterSaved() throws {
+        let afterReply = try recorded().afterReply
+        let saved = ClaudeStatusLine.run(input: afterReply, saved: nil, now: repliedAt).save
+        let later = date("2026-10-10T23:30:00-07:00")
+        let renamed = editing(afterReply) {
+            $0["rate_limits", "five_hour", "used_percentage"] = nil
+            $0["rate_limits", "five_hour", "used_pct"] = 25
+            $0["rate_limits", "seven_day", "used_percentage"] = 12
+        }
+        let run = ClaudeStatusLine.run(input: renamed, saved: saved, now: later)
+        #expect(run.line == "Opus 5.5 · wk 12%")
+        let section = snapshot(claudeStatusLine: (run.save ?? saved).flatMap(ClaudeStatusLine.limits(fromSaved:)), at: later)
+        #expect(section.claude.meters.map(\.percentText) == ["—", "12%", "—"])
+        #expect(section.claude.updatedText == "Updated just now")
+
+        // rate_limits itself unreadable: both windows show a dash.
+        let garbled = editing(afterReply) { $0["rate_limits"] = "soon" }
+        let garbledRun = ClaudeStatusLine.run(input: garbled, saved: saved, now: later)
+        #expect(garbledRun.line == "Opus 5.5")
+        let garbledSection = snapshot(claudeStatusLine: (garbledRun.save ?? saved).flatMap(ClaudeStatusLine.limits(fromSaved:)), at: later)
+        #expect(garbledSection.claude.meters.map(\.percentText) == ["—", "—", "—"])
+        #expect(garbledSection.menuBar.claude.text == "—")
+    }
+
     @Test("rate limits that are null or unreadable print just the model")
     func unreadableRateLimits() throws {
         for rateLimits in [NSNull(), "soon", ["five_hour": "full"]] as [Any] {

@@ -43,22 +43,34 @@ public enum ClaudeStatusLine {
     }
 
     static func run(_ payload: Payload, saved: SavedFile?, now: Date) -> Run {
-        guard payload.hasWindows else { return Run(line: payload.model, save: nil) }
-        let windows: [KeyPath<SavedFile, LimitReading?>] = [\.fiveHour, \.sevenDay]
-        let incoming = SavedFile(capturedAt: now, fiveHour: payload.fiveHour, sevenDay: payload.sevenDay)
+        guard payload.hasRateLimits else { return Run(line: payload.model, save: nil) }
+        let windows: [(Payload.Window, LimitReading?)] = [(payload.fiveHour, saved?.fiveHour), (payload.sevenDay, saved?.sevenDay)]
         // Every session runs the status line, and an idle one re-runs it (on
         // a mode change, say) with numbers from its last reply. Those are out
         // of date when another session has saved later numbers since.
-        let outOfDate = windows.contains { window in
-            guard let new = incoming[keyPath: window], let old = saved?[keyPath: window] else { return false }
+        let outOfDate = windows.contains { new, old in
+            guard case let .reading(new) = new, let old else { return false }
             return !new.supersedes(old, at: now)
         }
         let file = SavedFile(
             capturedAt: outOfDate ? saved?.capturedAt : now,
-            fiveHour: latest(incoming.fiveHour, saved?.fiveHour, at: now),
-            sevenDay: latest(incoming.sevenDay, saved?.sevenDay, at: now)
+            fiveHour: merged(payload.fiveHour, saved?.fiveHour, at: now),
+            sevenDay: merged(payload.sevenDay, saved?.sevenDay, at: now)
         )
-        return Run(line: line(model: payload.model, file, now: now), save: file == saved ? nil : file.encoded())
+        let unchanged = file == saved || (saved == nil && file.limits == nil)
+        return Run(line: line(model: payload.model, file, now: now), save: unchanged ? nil : file.encoded())
+    }
+
+    /// A window after this JSON: Claude Code drops a window once it resets,
+    /// so a missing one keeps the saved reading (which the app shows at 0%);
+    /// one it sent but that can't be read shows as unknown; a reading wins
+    /// if it's the later one.
+    private static func merged(_ new: Payload.Window, _ old: LimitReading?, at now: Date) -> LimitReading? {
+        switch new {
+        case .absent: old
+        case .unreadable: nil
+        case let .reading(new): latest(new, old, at: now)
+        }
     }
 
     /// The later of two readings of a window. Claude Code drops a window
@@ -111,16 +123,31 @@ extension ClaudeStatusLine {
     /// session's first reply, and drops a window once it resets.
     struct Payload: Decodable {
         var model = "Claude"
-        var fiveHour: LimitReading?
-        var sevenDay: LimitReading?
+        var fiveHour = Window.absent
+        var sevenDay = Window.absent
 
-        var hasWindows: Bool { fiveHour != nil || sevenDay != nil }
+        /// One window in the JSON.
+        enum Window: Equatable {
+            /// Not sent: no rate limits yet, or dropped after its reset.
+            case absent
+            /// Sent, but not in a shape UsageBar can read.
+            case unreadable
+            case reading(LimitReading)
+        }
+
+        /// Whether the JSON says anything about the windows.
+        var hasRateLimits: Bool { fiveHour != .absent || sevenDay != .absent }
 
         init() {}
 
         private enum CodingKeys: String, CodingKey {
             case model
             case rateLimits = "rate_limits"
+        }
+
+        private enum WindowKeys: String, CodingKey {
+            case fiveHour = "five_hour"
+            case sevenDay = "seven_day"
         }
 
         private struct Model: Decodable {
@@ -146,14 +173,24 @@ extension ClaudeStatusLine {
             if let name = (try? c.decodeIfPresent(Model.self, forKey: .model))?.name {
                 model = name
             }
-            let windows = try? c.decodeIfPresent(RateLimits.self, forKey: .rateLimits)
-            fiveHour = windows?.fiveHour
-            sevenDay = windows?.sevenDay
+            guard c.contains(.rateLimits), (try? c.decodeNil(forKey: .rateLimits)) != true else { return }
+            guard let windows = try? c.nestedContainer(keyedBy: WindowKeys.self, forKey: .rateLimits) else {
+                // `rate_limits` that isn't an object: neither window can be read.
+                (fiveHour, sevenDay) = (.unreadable, .unreadable)
+                return
+            }
+            fiveHour = Self.window(windows, .fiveHour)
+            sevenDay = Self.window(windows, .sevenDay)
+        }
+
+        private static func window(_ c: KeyedDecodingContainer<WindowKeys>, _ key: WindowKeys) -> Window {
+            guard c.contains(key), (try? c.decodeNil(forKey: key)) != true else { return .absent }
+            return (try? c.decode(RateLimits.Window.self, forKey: key)).map { .reading($0.reading) } ?? .unreadable
         }
     }
 
-    /// `rate_limits` as Claude Code sends it and as the saved file keeps it.
-    /// A window that's missing or can't be read is nil.
+    /// `rate_limits` as the saved file keeps it (Claude Code's shape). A
+    /// window that's missing or can't be read is nil.
     struct RateLimits: Codable {
         var fiveHour: LimitReading?
         var sevenDay: LimitReading?
@@ -163,7 +200,7 @@ extension ClaudeStatusLine {
             case sevenDay = "seven_day"
         }
 
-        private struct Window: Codable {
+        struct Window: Codable {
             var usedPercentage: Double
             var resetsAt: Double
 
