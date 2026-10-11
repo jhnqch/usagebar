@@ -18,19 +18,24 @@ public struct Readings: Decodable, Equatable, Sendable {
     /// app-server isn't available, and fresher whenever another Codex
     /// process ran a turn since app-server last reported.
     public var codexSessionLog: CodexLimits?
+    /// Claude Code's replies from its transcripts, one per message,
+    /// de-duplicated: the cost chart and the session's cost.
+    public var claudeUsage: [UsageEntry]
 
     public init(
         claudePlan: String? = nil,
         claude: ClaudeLimits? = nil,
         claudeStatusLine: ClaudeLimits? = nil,
         codex: CodexLimits? = nil,
-        codexSessionLog: CodexLimits? = nil
+        codexSessionLog: CodexLimits? = nil,
+        claudeUsage: [UsageEntry] = []
     ) {
         self.claudePlan = claudePlan
         self.claude = claude
         self.claudeStatusLine = claudeStatusLine
         self.codex = codex
         self.codexSessionLog = codexSessionLog
+        self.claudeUsage = claudeUsage
     }
 }
 
@@ -107,7 +112,8 @@ extension Readings {
             claude: claude?.shifted(by: offset),
             claudeStatusLine: claudeStatusLine?.shifted(by: offset),
             codex: codex?.shifted(by: offset),
-            codexSessionLog: codexSessionLog?.shifted(by: offset)
+            codexSessionLog: codexSessionLog?.shifted(by: offset),
+            claudeUsage: claudeUsage.map { $0.shifted(by: offset) }
         )
     }
 }
@@ -159,6 +165,9 @@ extension Readings {
         case codexAppServerMessages
         /// Recorded session-log lines, read into `codexSessionLog`.
         case codexSessionLogLines
+        /// Recorded Claude Code transcript lines, read and de-duplicated
+        /// into `claudeUsage`.
+        case claudeTranscriptLines
     }
 
     /// Recorded app-server messages and the time they arrived.
@@ -194,6 +203,10 @@ extension Readings {
         codexSessionLog = (try? c.decodeIfPresent(CodexLimits.self, forKey: .codexSessionLog))
             ?? (try? c.decodeIfPresent([Lenient<CodexSessionLog.Line>].self, forKey: .codexSessionLogLines))
                 .flatMap { CodexSessionLog.lastRecord(of: $0.compactMap(\.value))?.limits }
+        var ledger = UsageLedger()
+        ledger.add(((try? c.decodeIfPresent([Lenient<ClaudeTranscript.Line>].self, forKey: .claudeTranscriptLines)) ?? [])
+            .compactMap { $0.value?.entry })
+        claudeUsage = ledger.entries
     }
 }
 

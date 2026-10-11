@@ -50,10 +50,11 @@ func snapshot(
     claudeStatusLine: ClaudeLimits? = nil,
     codex: CodexLimits? = nil,
     codexSessionLog: CodexLimits? = nil,
+    claudeUsage: [UsageEntry] = [],
     at time: Date = now
 ) -> UsageSnapshot {
     UsageEngine.snapshot(
-        from: Readings(claude: claude, claudeStatusLine: claudeStatusLine, codex: codex, codexSessionLog: codexSessionLog),
+        from: Readings(claude: claude, claudeStatusLine: claudeStatusLine, codex: codex, codexSessionLog: codexSessionLog, claudeUsage: claudeUsage),
         now: time,
         timeZone: losAngeles
     )
@@ -134,4 +135,53 @@ func editing(_ json: Data, _ edit: (inout EditableJSON) -> Void) -> Data {
     var editable = EditableJSON(object: (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] ?? [:])
     edit(&editable)
     return try! JSONSerialization.data(withJSONObject: editable.object)
+}
+
+/// One assistant line as Claude Code writes it to a transcript, with the
+/// fields UsageBar reads (and a few it doesn't).
+func transcriptLine(
+    id: String,
+    at time: String,
+    model: String = "claude-opus-5-5",
+    input: Int = 0,
+    write5m: Int = 0,
+    write1h: Int = 0,
+    read: Int = 0,
+    output: Int = 0,
+    speed: String = "standard"
+) -> Data {
+    let line: [String: Any] = [
+        "parentUuid": NSNull(),
+        "isSidechain": false,
+        "type": "assistant",
+        "uuid": UUID().uuidString.lowercased(),
+        "timestamp": time,
+        "requestId": "req_\(id)",
+        "message": [
+            "model": model,
+            "id": id,
+            "type": "message",
+            "role": "assistant",
+            "content": [],
+            "usage": [
+                "input_tokens": input,
+                "cache_creation_input_tokens": write5m + write1h,
+                "cache_read_input_tokens": read,
+                "output_tokens": output,
+                "service_tier": "standard",
+                "cache_creation": ["ephemeral_5m_input_tokens": write5m, "ephemeral_1h_input_tokens": write1h],
+                "speed": speed,
+            ],
+        ],
+    ]
+    return try! JSONSerialization.data(withJSONObject: line)
+}
+
+/// Claude Code's usage in transcript lines, read and de-duplicated as the app does.
+func claudeUsage(_ lines: [Data]) -> [UsageEntry] {
+    var ledger = UsageLedger()
+    for line in lines {
+        ledger.add(ClaudeTranscript.entries(in: line + Data("\n".utf8)))
+    }
+    return ledger.entries
 }

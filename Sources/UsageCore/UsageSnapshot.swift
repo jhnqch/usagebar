@@ -56,4 +56,7 @@ public struct Meter: Equatable, Sendable, Identifiable {
     public var level: Level
     /// "Resets in 2h 18m (4:58 PM)"; nil when there's no reading.
     public var resetText: String?
+    /// What the window has used so far at API prices, e.g.
+    /// "$4.12 · 1.9M tokens this session"; nil where it isn't tracked.
+    public var usageText: String? = nil
 }

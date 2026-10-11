@@ -2,14 +2,21 @@ import Foundation
 
 /// The usage engine: a pure function from readings and a clock to a snapshot.
 public enum UsageEngine {
-    public static func snapshot(from readings: Readings, now: Date, timeZone: TimeZone) -> UsageSnapshot {
+    public static func snapshot(
+        from readings: Readings,
+        now: Date,
+        timeZone: TimeZone,
+        prices: PriceTable = .claude
+    ) -> UsageSnapshot {
         let clock = Clock(now: now, timeZone: timeZone)
 
         let claude = readings.claude
         let statusLine = readings.claudeStatusLine
+        let fiveHour = merged(statusLine?.fiveHour, claude?.fiveHour)
+        let weekly = merged(statusLine?.sevenDay, claude?.sevenDay)
         let claudeWindows = [
-            Window(id: "claude.fiveHour", label: "5-hour session", reading: merged(statusLine?.fiveHour, claude?.fiveHour)),
-            Window(id: "claude.sevenDay", label: "Weekly · all models", reading: merged(statusLine?.sevenDay, claude?.sevenDay)),
+            Window(id: "claude.fiveHour", label: "5-hour session", reading: fiveHour),
+            Window(id: "claude.sevenDay", label: "Weekly · all models", reading: weekly),
             // Fable comes only from the usage endpoint.
             Window(id: "claude.sevenDayFable", label: "Weekly · Fable", reading: claude?.sevenDayFable),
         ].map { $0.current(at: now) }
@@ -38,7 +45,10 @@ public enum UsageEngine {
             claude: ServiceSection(
                 plan: readings.claudePlan.map(planBadge),
                 updatedText: [statusLine?.capturedAt, claude?.capturedAt].compactMap(\.self).max().map { clock.updatedText($0) },
-                meters: claudeWindows.map { meter($0, clock: clock) },
+                meters: claudeWindows.map { meter($0, clock: clock) }.withUsage(
+                    UsageCost.session(readings.claudeUsage, window: fiveHour, now: now, prices: prices),
+                    on: "claude.fiveHour"
+                ),
                 note: nil
             ),
             codex: ServiceSection(
@@ -128,6 +138,17 @@ public enum UsageEngine {
     /// Whole percent, rounded down so the text never shows a level the value hasn't reached.
     static func percentText(_ percent: Double) -> String {
         "\(Int(min(max(percent, 0), 100).rounded(.down)))%"
+    }
+}
+
+extension [Meter] {
+    /// The meters with `usageText` set on the one with `id`.
+    fileprivate func withUsage(_ text: String?, on id: String) -> [Meter] {
+        map { meter in
+            var meter = meter
+            if meter.id == id { meter.usageText = text }
+            return meter
+        }
     }
 }
 
