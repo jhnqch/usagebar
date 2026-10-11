@@ -24,7 +24,8 @@ public enum CodexRollout {
     /// in the running total since the last token count, so a count Codex
     /// sends again adds nothing. Where there's no earlier total (a file's
     /// first count, which may carry usage from before the file), or the
-    /// total went down (it started over), the response's own usage counts.
+    /// total went down (it started over), the response's own usage counts;
+    /// a count with no running total adds its response's usage to the last.
     public struct Parser: UsageLogParser {
         /// Names the file's entries: its thread id once `session_meta` is
         /// read, else its file name. A file read again, or moved (as
@@ -77,6 +78,10 @@ public enum CodexRollout {
                     self.total = total
                 } else {
                     usage = last
+                    // The running total moved on by this response too.
+                    if let last, let previous = self.total {
+                        self.total = previous + last
+                    }
                 }
                 guard let usage, usage.sum > 0, let timestamp = line.timestamp else { return nil }
                 defer { responses += 1 }
@@ -105,6 +110,11 @@ public enum CodexRollout {
 
         /// Every token, as `total_tokens` would say.
         var sum: Int { input + output }
+
+        static func + (lhs: Usage, rhs: Usage) -> Usage {
+            Usage(input: lhs.input + rhs.input, cached: lhs.cached + rhs.cached,
+                  cacheWrite: lhs.cacheWrite + rhs.cacheWrite, output: lhs.output + rhs.output)
+        }
 
         /// The change since `earlier`, field by field, never below zero.
         func since(_ earlier: Usage) -> Usage {

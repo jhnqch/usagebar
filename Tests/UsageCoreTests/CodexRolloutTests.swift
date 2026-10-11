@@ -92,6 +92,18 @@ struct CodexRolloutTests {
         ])
     }
 
+    @Test("a response logged without a running total moves the total on, so the next one doesn't count it again")
+    func countWithoutTotal() throws {
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-1", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 1_000), last: codexTokens(input: 1_000)),
+            Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00", total: nil, last: codexTokens(input: 200)),
+            Rollout.tokenCount(at: "2026-10-09T10:00:12-07:00", total: codexTokens(input: 1_500), last: codexTokens(input: 300)),
+        ]])
+        #expect(entries.map(\.tokens.input) == [1_000, 200, 300])
+    }
+
     @Test("a file whose first running total carries earlier usage counts only that response's own")
     func carriedTotal() throws {
         let entries = codexUsage([[
