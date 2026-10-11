@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import SwiftUI
 import UsageCore
 
@@ -6,11 +7,14 @@ import UsageCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model: AppModel
+    private let codex: CodexMonitor
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
+    private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "menu-bar")
 
     init(model: AppModel) {
         self.model = model
+        codex = CodexMonitor(model: model)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -19,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.action = #selector(togglePopover(_:))
         statusItem = item
 
-        let host = NSHostingController(rootView: PopoverHost(model: model))
+        let host = NSHostingController(rootView: PopoverHost(model: model) { [weak self] in self?.refresh(force: true) })
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
         popover.behavior = .transient
@@ -28,17 +32,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onChange = { [weak self] snapshot in self?.show(snapshot.menuBar) }
         model.refresh()
         model.startTicking()
+        codex.start()
 
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.model.refresh() }
+            MainActor.assumeIsolated { self?.refresh(force: false) }
         }
 
         LoginItem.registerOnFirstRun()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // No orphaned app-server after quitting.
+        codex.stop()
+    }
+
+    private func refresh(force: Bool) {
+        model.refresh()
+        codex.refresh(force: force)
+    }
+
     private func show(_ label: MenuBarLabel) {
+        if statusItem?.button?.accessibilityLabel() != MenuBarText.accessibilityLabel(label) {
+            log.info("menu bar: \(label.text, privacy: .public)")
+        }
         statusItem?.button?.attributedTitle = MenuBarText.attributed(label)
         statusItem?.button?.setAccessibilityLabel(MenuBarText.accessibilityLabel(label))
     }
@@ -47,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown {
             popover.performClose(sender)
         } else {
-            model.refresh()
+            refresh(force: false)
             // Follow the system's light/dark setting, not the menu bar's
             // appearance (which tracks the wallpaper).
             popover.appearance = NSApp.effectiveAppearance
@@ -61,11 +79,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// Re-renders the popover whenever the model's snapshot changes.
 private struct PopoverHost: View {
     var model: AppModel
+    var onRefresh: () -> Void
 
     var body: some View {
         PopoverView(
             snapshot: model.snapshot,
-            onRefresh: { model.refresh() },
+            onRefresh: onRefresh,
             onQuit: { NSApp.terminate(nil) }
         )
     }

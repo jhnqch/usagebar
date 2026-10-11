@@ -9,12 +9,21 @@ import UsageCore
 final class AppModel {
     private(set) var snapshot: UsageSnapshot
     @ObservationIgnored var onChange: ((UsageSnapshot) -> Void)?
-    @ObservationIgnored private let readings: Readings
+    @ObservationIgnored private var readings: Readings
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
     init(readings: Readings) {
         self.readings = readings
         snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current)
+    }
+
+    /// Changes the readings and, if they changed, recomputes the snapshot.
+    func update(_ change: (inout Readings) -> Void) {
+        var updated = readings
+        change(&updated)
+        guard updated != readings else { return }
+        readings = updated
+        refresh()
     }
 
     /// Recomputes the snapshot against the current clock.
@@ -35,8 +44,9 @@ final class AppModel {
     }
 }
 
-/// Sample readings bundled with the app until live sources land: the
-/// recorded sample, shifted so it reads as fresh at launch.
+/// Sample Claude readings bundled with the app until Claude's live sources
+/// land: the recorded sample, shifted so it reads as fresh at launch.
+/// Codex is live, so the sample's Codex readings are dropped.
 enum SampleReadings {
     static func load(now: Date = Date()) -> Readings {
         guard
@@ -44,6 +54,6 @@ enum SampleReadings {
             let data = try? Data(contentsOf: url),
             let fixture = try? Fixture.decode(data)
         else { return Readings() }
-        return fixture.readings(rebasedTo: now)
+        return Readings(claude: fixture.readings(rebasedTo: now).claude)
     }
 }

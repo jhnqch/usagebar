@@ -3,6 +3,9 @@ import UsageCore
 
 let arguments = CommandLine.arguments
 
+// Writing to an app-server that just exited must fail, not kill the app.
+signal(SIGPIPE, SIG_IGN)
+
 if let flag = arguments.firstIndex(of: "--snapshot") {
     guard arguments.count > flag + 2 else {
         FileHandle.standardError.write(Data("usage: UsageBar --snapshot <fixture.json> <out.png>\n".utf8))
