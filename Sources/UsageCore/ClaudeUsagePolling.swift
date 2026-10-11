@@ -66,14 +66,19 @@ public struct ClaudeUsagePolling: Sendable {
 
     /// Whether to ask the endpoint now.
     public func isDue(_ trigger: Trigger, at now: Date) -> Bool {
+        guard let lastStart else { return true }
+        // A clock set back makes every deadline taken from the old clock
+        // meaningless, the backoff's included: poll, and start over from now.
+        guard now >= lastStart else { return true }
         if let notBefore, now < notBefore { return false }
-        guard let lastStart, now >= lastStart else { return true }  // also when the clock was set back
         return now.timeIntervalSince(lastStart) >= (trigger == .timer ? Self.interval : Self.minimumGap)
     }
 
-    /// Notes that a request starts now.
+    /// Notes that a request starts now. Any backoff is over (or its deadline
+    /// came from a clock since set back); the answer may start a new one.
     public mutating func start(at now: Date) {
         lastStart = now
+        notBefore = nil
     }
 
     /// Applies the outcome of the request started last.

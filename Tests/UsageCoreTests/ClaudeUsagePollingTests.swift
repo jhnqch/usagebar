@@ -160,9 +160,19 @@ struct ClaudeUsagePollingTests {
         #expect(due(polling, .timer, from: start) == 600)
     }
 
-    @Test("a clock set back doesn't stop polling")
+    @Test("a clock set back doesn't stop polling, even while backing off")
     func clockSetBack() throws {
         let polling = finished(with: .response(status: 200, body: try recordedResponse()))
         #expect(polling.isDue(.timer, at: start - 3600))
+        // A 10-minute backoff, then the clock goes back an hour: the
+        // backoff's deadline is an hour and ten minutes away on the new clock.
+        let backingOff = finished(with: .response(status: 429, body: Data()))
+        #expect(backingOff.isDue(.timer, at: start - 3600))
+        #expect(backingOff.isDue(.popover, at: start - 3600))
+        // That poll fails to connect: the old deadline doesn't come back.
+        var afterRollback = backingOff
+        afterRollback.start(at: start - 3600)
+        afterRollback.finish(.networkError, at: start - 3600)
+        #expect(due(afterRollback, .timer, from: start - 3600) == 300)
     }
 }
