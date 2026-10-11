@@ -130,3 +130,93 @@ public enum ClaudeTranscript {
 private func count<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Int {
     max(0, (try? c.decodeIfPresent(Int.self, forKey: key)) ?? 0)
 }
+
+/// An incremental scan of transcript files. Claude Code only appends to
+/// them, so each file keeps a cursor: the end of its last complete line
+/// read. A rescan reads only the bytes after it. The adapter lists the
+/// files, asks `reads(for:since:)` what to read, and hands each read's bytes
+/// to `receive(_:for:)`.
+public struct TranscriptScan: Equatable, Sendable {
+    /// A transcript file as listed.
+    public struct File: Equatable, Sendable {
+        public var path: String
+        public var size: Int
+        public var modified: Date
+        /// The file's identity (its inode): a new file under the same name
+        /// is read from the start.
+        public var identity: UInt64
+
+        public init(path: String, size: Int, modified: Date, identity: UInt64) {
+            self.path = path
+            self.size = size
+            self.modified = modified
+            self.identity = identity
+        }
+    }
+
+    /// Bytes to read from a file.
+    public struct Read: Equatable, Sendable {
+        public var path: String
+        public var offset: Int
+        public var length: Int
+
+        public init(path: String, offset: Int, length: Int) {
+            self.path = path
+            self.offset = offset
+            self.length = length
+        }
+    }
+
+    private struct Cursor: Equatable, Sendable {
+        var identity: UInt64
+        var offset: Int
+    }
+
+    private var cursors: [String: Cursor] = [:]
+    private var ledger = UsageLedger()
+    private var since = Date.distantPast
+
+    public init() {}
+
+    /// What to read now, given the transcript files that exist and the
+    /// earliest time still wanted. A file last changed before `since` holds
+    /// nothing newer, so it isn't read; replies before it are forgotten.
+    public mutating func reads(for files: [File], since: Date) -> [Read] {
+        self.since = since
+        ledger.removeEntries(before: since)
+        let listed = Set(files.map(\.path))
+        cursors = cursors.filter { listed.contains($0.key) }
+        var reads: [Read] = []
+        for file in files {
+            if let cursor = cursors[file.path], cursor.identity == file.identity, cursor.offset <= file.size {
+                if cursor.offset < file.size {
+                    reads.append(Read(path: file.path, offset: cursor.offset, length: file.size - cursor.offset))
+                }
+                continue
+            }
+            // New, replaced or shrunk: from the start. Replies already
+            // counted are merged by message id, not counted twice.
+            guard file.modified >= since || cursors[file.path] != nil else { continue }
+            cursors[file.path] = Cursor(identity: file.identity, offset: 0)
+            if file.size > 0 {
+                reads.append(Read(path: file.path, offset: 0, length: file.size))
+            }
+        }
+        return reads
+    }
+
+    /// The bytes read for `read`. Takes every complete line; a last line
+    /// still being written is read again next time.
+    public mutating func receive(_ bytes: Data, for read: Read) {
+        guard var cursor = cursors[read.path], cursor.offset == read.offset,
+              let lastNewline = bytes.lastIndex(of: UInt8(ascii: "\n"))
+        else { return }
+        let complete = bytes[bytes.startIndex...lastNewline]
+        ledger.add(ClaudeTranscript.entries(in: Data(complete)).filter { $0.timestamp >= since })
+        cursor.offset += complete.count
+        cursors[read.path] = cursor
+    }
+
+    /// Every reply read so far since `since`, oldest first.
+    public var entries: [UsageEntry] { ledger.entries }
+}
