@@ -17,22 +17,23 @@ enum StatusLineCommand {
         )
         let file = directory.appending(path: ClaudeStatusLine.fileName)
 
-        var result = ClaudeStatusLine.run(input: input, saved: nil, now: Date())
-        if result.save != nil {
-            // Sessions run this concurrently; read, merge and write under a lock.
-            do {
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                try withLock(in: directory) {
-                    result = ClaudeStatusLine.run(input: input, saved: try? Data(contentsOf: file), now: Date())
-                    if let save = result.save {
-                        try writeAtomically(save, to: file)
-                    }
+        // Always merge against the saved file: whether anything changes
+        // (even a window clearing) depends on what's saved. Sessions run this
+        // concurrently, so read, merge and write under a lock.
+        var line: String?
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try withLock(in: directory) {
+                let result = ClaudeStatusLine.run(input: input, saved: try? Data(contentsOf: file), now: Date())
+                if let save = result.save {
+                    try writeAtomically(save, to: file)
                 }
-            } catch {
-                FileHandle.standardError.write(Data("usagebar-statusline: couldn't save rate limits: \(error)\n".utf8))
+                line = result.line
             }
+        } catch {
+            FileHandle.standardError.write(Data("usagebar-statusline: couldn't save rate limits: \(error)\n".utf8))
         }
-        print(result.line)
+        print(line ?? ClaudeStatusLine.run(input: input, saved: try? Data(contentsOf: file), now: Date()).line)
     }
 
     struct Failure: Error, CustomStringConvertible {
