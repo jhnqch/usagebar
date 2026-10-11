@@ -3,7 +3,12 @@ import Foundation
 /// The latest raw readings from every source. The engine turns these, plus a
 /// clock, into a `UsageSnapshot`. A missing reading means "no data".
 public struct Readings: Decodable, Equatable, Sendable {
+    /// Claude limits from the usage endpoint (today, the bundled sample):
+    /// the only source for Fable, and the plan.
     public var claude: ClaudeLimits?
+    /// Claude's 5-hour and weekly limits from the status line file, the
+    /// live source while Claude Code is in use.
+    public var claudeStatusLine: ClaudeLimits?
     /// Codex limits from `codex app-server`, the live source.
     public var codex: CodexLimits?
     /// The latest Codex record in the session logs: the fallback when
@@ -11,8 +16,14 @@ public struct Readings: Decodable, Equatable, Sendable {
     /// process ran a turn since app-server last reported.
     public var codexSessionLog: CodexLimits?
 
-    public init(claude: ClaudeLimits? = nil, codex: CodexLimits? = nil, codexSessionLog: CodexLimits? = nil) {
+    public init(
+        claude: ClaudeLimits? = nil,
+        claudeStatusLine: ClaudeLimits? = nil,
+        codex: CodexLimits? = nil,
+        codexSessionLog: CodexLimits? = nil
+    ) {
         self.claude = claude
+        self.claudeStatusLine = claudeStatusLine
         self.codex = codex
         self.codexSessionLog = codexSessionLog
     }
@@ -92,6 +103,7 @@ extension Readings {
     func shifted(by offset: TimeInterval) -> Readings {
         Readings(
             claude: claude?.shifted(by: offset),
+            claudeStatusLine: claudeStatusLine?.shifted(by: offset),
             codex: codex?.shifted(by: offset),
             codexSessionLog: codexSessionLog?.shifted(by: offset)
         )
@@ -136,7 +148,10 @@ extension CodexLimits {
 
 extension Readings {
     private enum CodingKeys: String, CodingKey {
-        case claude, codex, codexSessionLog
+        case claude, claudeStatusLine, codex, codexSessionLog
+        /// Recorded status line JSON, run through the status line command
+        /// into `claudeStatusLine`.
+        case claudeStatusLineInputs
         /// Recorded app-server stdout lines, replayed into `codex`.
         case codexAppServerMessages
         /// Recorded session-log lines, read into `codexSessionLog`.
@@ -165,6 +180,9 @@ extension Readings {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         claude = try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claude)
+        claudeStatusLine = (try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claudeStatusLine))
+            ?? (try? c.decodeIfPresent([ClaudeStatusLine.RecordedInput].self, forKey: .claudeStatusLineInputs))
+                .flatMap(ClaudeStatusLine.replay)
         codex = (try? c.decodeIfPresent(CodexLimits.self, forKey: .codex))
             ?? (try? c.decodeIfPresent(RecordedAppServer.self, forKey: .codexAppServerMessages))?.limits
         codexSessionLog = (try? c.decodeIfPresent(CodexLimits.self, forKey: .codexSessionLog))

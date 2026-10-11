@@ -1,0 +1,45 @@
+{
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "claude": {
+      "plan": "Max",
+      "sevenDayFable": {
+        "usedPercent": 58,
+        "resetsAt": "2026-10-16T00:00:00-07:00"
+      }
+    },
+    "claudeStatusLineInputs": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "payload": {
+          "model": {
+            "id": "claude-opus-5-5",
+            "display_name": "Opus 5.5"
+          },
+          "rate_limits": {
+            "five_hour": {
+              "used_percentage": 100,
+              "resets_at": 1791672300
+            },
+            "seven_day": {
+              "used_percentage": 84,
+              "resets_at": 1792134000
+            }
+          }
+        }
+      }
+    ],
+    "codex": {
+      "plan": "pro",
+      "capturedAt": "2026-10-10T14:40:00-07:00",
+      "windows": [
+        {
+          "usedPercent": 13,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-15T13:16:00-07:00"
+        }
+      ]
+    }
+  }
+}

@@ -6,9 +6,11 @@ public enum UsageEngine {
         let clock = Clock(now: now, timeZone: timeZone)
 
         let claude = readings.claude
+        let statusLine = readings.claudeStatusLine
         let claudeWindows = [
-            Window(id: "claude.fiveHour", label: "5-hour session", reading: claude?.fiveHour),
-            Window(id: "claude.sevenDay", label: "Weekly · all models", reading: claude?.sevenDay),
+            Window(id: "claude.fiveHour", label: "5-hour session", reading: fresher(statusLine, claude, \.fiveHour)),
+            Window(id: "claude.sevenDay", label: "Weekly · all models", reading: fresher(statusLine, claude, \.sevenDay)),
+            // Fable comes only from the usage endpoint.
             Window(id: "claude.sevenDayFable", label: "Weekly · Fable", reading: claude?.sevenDayFable),
         ].map { $0.current(at: now) }
 
@@ -35,7 +37,7 @@ public enum UsageEngine {
             ),
             claude: ServiceSection(
                 plan: claude?.plan.map(planBadge),
-                updatedText: claude?.capturedAt.map { clock.updatedText($0) },
+                updatedText: [statusLine?.capturedAt, claude?.capturedAt].compactMap(\.self).max().map { clock.updatedText($0) },
                 meters: claudeWindows.map { meter($0, clock: clock) },
                 note: nil
             ),
@@ -47,6 +49,18 @@ public enum UsageEngine {
                     ? nil : "No 5-hour limit on your plan"
             )
         )
+    }
+
+    /// One Claude window from whichever source captured it later; the status
+    /// line on a tie.
+    private static func fresher(
+        _ statusLine: ClaudeLimits?,
+        _ endpoint: ClaudeLimits?,
+        _ window: KeyPath<ClaudeLimits, LimitReading?>
+    ) -> LimitReading? {
+        guard let fromStatusLine = statusLine?[keyPath: window] else { return endpoint?[keyPath: window] }
+        guard let fromEndpoint = endpoint?[keyPath: window] else { return fromStatusLine }
+        return (endpoint?.capturedAt ?? .distantPast) > (statusLine?.capturedAt ?? .distantPast) ? fromEndpoint : fromStatusLine
     }
 
     /// Whichever Codex reading was taken later; app-server on a tie.

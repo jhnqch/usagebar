@@ -48,12 +48,13 @@ func codex(weekly: Double = 13, resetsAt: Date = date("2026-10-15T13:16:00-07:00
 
 func snapshot(
     claude: ClaudeLimits? = nil,
+    claudeStatusLine: ClaudeLimits? = nil,
     codex: CodexLimits? = nil,
     codexSessionLog: CodexLimits? = nil,
     at time: Date = now
 ) -> UsageSnapshot {
     UsageEngine.snapshot(
-        from: Readings(claude: claude, codex: codex, codexSessionLog: codexSessionLog),
+        from: Readings(claude: claude, claudeStatusLine: claudeStatusLine, codex: codex, codexSessionLog: codexSessionLog),
         now: time,
         timeZone: losAngeles
     )
@@ -106,4 +107,32 @@ func replay(_ lines: [Data], at time: Date) -> Replay {
         if let failure = step.failure { result.failures.append(failure) }
     }
     return result
+}
+
+/// A JSON object edited in place: `json["a", "b"] = 1` sets a nested key and
+/// `= nil` removes it.
+struct EditableJSON {
+    var object: [String: Any]
+
+    subscript(path: String...) -> Any? {
+        get { path.dropLast().reduce(object as Any?) { ($0 as? [String: Any])?[$1] }.flatMap { ($0 as? [String: Any])?[path.last!] } }
+        set { object = Self.setting(object, Array(path), newValue) }
+    }
+
+    private static func setting(_ object: [String: Any], _ path: [String], _ value: Any?) -> [String: Any] {
+        var copy = object
+        if path.count == 1 {
+            copy[path[0]] = value
+        } else {
+            copy[path[0]] = setting(object[path[0]] as? [String: Any] ?? [:], Array(path.dropFirst()), value)
+        }
+        return copy
+    }
+}
+
+/// A recorded JSON object with some edits applied.
+func editing(_ json: Data, _ edit: (inout EditableJSON) -> Void) -> Data {
+    var editable = EditableJSON(object: (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] ?? [:])
+    edit(&editable)
+    return try! JSONSerialization.data(withJSONObject: editable.object)
 }
