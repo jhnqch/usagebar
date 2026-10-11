@@ -148,7 +148,8 @@ func transcriptLine(
     write1h: Int = 0,
     read: Int = 0,
     output: Int = 0,
-    speed: String = "standard"
+    speed: String = "standard",
+    inferenceGeo: String = "global"
 ) -> Data {
     let line: [String: Any] = [
         "parentUuid": NSNull(),
@@ -171,6 +172,7 @@ func transcriptLine(
                 "service_tier": "standard",
                 "cache_creation": ["ephemeral_5m_input_tokens": write5m, "ephemeral_1h_input_tokens": write1h],
                 "speed": speed,
+                "inference_geo": inferenceGeo,
             ],
         ],
     ]

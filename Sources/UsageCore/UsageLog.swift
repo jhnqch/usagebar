@@ -27,12 +27,17 @@ public struct TokenCounts: Equatable, Sendable {
     public var prompt: Int { input + cacheWrite5m + cacheWrite1h + cacheRead }
 
     /// Each count's larger value: a streamed message is logged several times
-    /// as it grows, so the largest count is the final one.
+    /// as it grows, so the largest count is the final one. The cache writes
+    /// are one total split two ways, so they come as a pair from one copy:
+    /// the one with more writes or, for the same writes, more of them
+    /// 1-hour (a copy without the split reads them all as 5-minute).
     func merged(with other: TokenCounts) -> TokenCounts {
-        TokenCounts(
+        let writes = (cacheWrite5m + cacheWrite1h, cacheWrite1h) >= (other.cacheWrite5m + other.cacheWrite1h, other.cacheWrite1h)
+            ? self : other
+        return TokenCounts(
             input: max(input, other.input),
-            cacheWrite5m: max(cacheWrite5m, other.cacheWrite5m),
-            cacheWrite1h: max(cacheWrite1h, other.cacheWrite1h),
+            cacheWrite5m: writes.cacheWrite5m,
+            cacheWrite1h: writes.cacheWrite1h,
             cacheRead: max(cacheRead, other.cacheRead),
             output: max(output, other.output)
         )
@@ -59,13 +64,16 @@ public struct UsageEntry: Equatable, Sendable {
     public var tokens: TokenCounts
     /// Whether it ran in fast mode, which is priced higher.
     public var fast: Bool
+    /// Whether it ran with US-only inference, which costs 1.1x.
+    public var usOnly: Bool
 
-    public init(id: String, timestamp: Date, model: String, tokens: TokenCounts, fast: Bool = false) {
+    public init(id: String, timestamp: Date, model: String, tokens: TokenCounts, fast: Bool = false, usOnly: Bool = false) {
         self.id = id
         self.timestamp = timestamp
         self.model = model
         self.tokens = tokens
         self.fast = fast
+        self.usOnly = usOnly
     }
 
     func shifted(by offset: TimeInterval) -> UsageEntry {
@@ -95,7 +103,8 @@ public struct UsageLedger: Equatable, Sendable {
             timestamp: min(known.timestamp, entry.timestamp),
             model: known.model,
             tokens: known.tokens.merged(with: entry.tokens),
-            fast: known.fast || entry.fast
+            fast: known.fast || entry.fast,
+            usOnly: known.usOnly || entry.usOnly
         )
     }
 

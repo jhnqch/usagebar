@@ -68,6 +68,7 @@ public enum ClaudeTranscript {
         private struct Usage: Decodable {
             var tokens: TokenCounts
             var fast: Bool
+            var usOnly: Bool
 
             private enum CodingKeys: String, CodingKey {
                 case input = "input_tokens"
@@ -76,6 +77,7 @@ public enum ClaudeTranscript {
                 case output = "output_tokens"
                 case split = "cache_creation"
                 case speed
+                case inferenceGeo = "inference_geo"
             }
 
             private struct Split: Decodable {
@@ -110,6 +112,7 @@ public enum ClaudeTranscript {
                     output: count(c, .output)
                 )
                 fast = (try? c.decodeIfPresent(String.self, forKey: .speed)) == "fast"
+                usOnly = (try? c.decodeIfPresent(String.self, forKey: .inferenceGeo)) == "us"
             }
         }
 
@@ -129,7 +132,8 @@ public enum ClaudeTranscript {
                 timestamp: timestamp,
                 model: message.model ?? "unknown",
                 tokens: usage.tokens,
-                fast: usage.fast
+                fast: usage.fast,
+                usOnly: usage.usOnly
             )
         }
 

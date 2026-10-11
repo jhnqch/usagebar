@@ -97,6 +97,29 @@ struct ClaudeCostTests {
         #expect(snapshot(claude: claude(), claudeUsage: usage).claude.meters[0].usageText == "$3.60 · 150K tokens this session")
     }
 
+    @Test("US-only inference costs 1.1x, on every kind of token")
+    func usOnlyInference() {
+        // 100,000 1-hour writes $0.80 + 50,000 output $1.00 = $1.80, x 1.1 = $1.98.
+        let usage = claudeUsage([transcriptLine(id: "msg_1", at: "2026-10-10T14:00:00-07:00",
+                                                write1h: 100_000, output: 50_000, inferenceGeo: "us")])
+        #expect(snapshot(claude: claude(), claudeUsage: usage).claude.meters[0].usageText == "$1.98 · 150K tokens this session")
+    }
+
+    @Test("copies that split the same cache writes differently count them once")
+    func cacheWriteSplitAcrossCopies() {
+        // One copy has no 5-minute/1-hour split (so reads as 5-minute writes),
+        // the other says they were 1-hour writes: 100,000 x $8 = $0.80, not
+        // $0.80 plus 100,000 x $5.
+        let lines = [
+            #"{"type":"assistant","timestamp":"2026-10-10T21:00:00Z","message":{"id":"msg_1","model":"claude-opus-5-5","usage":{"cache_creation_input_tokens":100000}}}"#,
+            #"{"type":"assistant","timestamp":"2026-10-10T21:00:01Z","message":{"id":"msg_1","model":"claude-opus-5-5","usage":{"cache_creation_input_tokens":100000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":100000}}}}"#,
+        ]
+        for order in [lines, lines.reversed()] {
+            let usage = claudeUsage(order.map { Data($0.utf8) })
+            #expect(snapshot(claude: claude(), claudeUsage: usage).claude.meters[0].usageText == "$0.80 · 100K tokens this session")
+        }
+    }
+
     @Test(
         "the price table has every current Claude model, at the pricing page's rates",
         arguments: [

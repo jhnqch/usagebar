@@ -17,8 +17,10 @@ import Foundation
 ///   rates; the cache multipliers apply on top of them.
 /// - Haiku 5.5 charges more for a prompt over 100,000 tokens, cache reads
 ///   and writes included.
-/// - Not modelled: batch and data-residency pricing, which Claude Code
-///   doesn't log, and the pre-4.6 long-context premium on Sonnet 4.5 and 4.
+/// - US-only inference (`inference_geo: "us"`) costs 1.1x on Claude 4.6 and
+///   later; `ModelPrice.dollars` applies it.
+/// - Not modelled: batch pricing, which Claude Code doesn't use, and the
+///   pre-4.6 long-context premium on Sonnet 4.5 and 4.
 extension PriceTable {
     public static let claude = PriceTable(models: [
         price("claude-fable-5-1", "Fable 5.1", "fable", input: 10, cacheRead: 0.25, output: 50),

@@ -51,13 +51,18 @@ public struct ModelPrice: Equatable, Sendable {
         self.fast = fast
     }
 
-    /// What one reply would have cost through the API.
+    /// What one reply would have cost through the API. US-only inference
+    /// (offered on Claude 4.6 and later) multiplies every rate by 1.1, on
+    /// top of fast mode or long-prompt rates.
     public func dollars(_ entry: UsageEntry) -> Double {
-        if entry.fast, let fast { return fast.dollars(entry.tokens) }
-        if let longContext, entry.tokens.prompt > longContext.threshold {
-            return longContext.rates.dollars(entry.tokens)
+        let dollars = if entry.fast, let fast {
+            fast.dollars(entry.tokens)
+        } else if let longContext, entry.tokens.prompt > longContext.threshold {
+            longContext.rates.dollars(entry.tokens)
+        } else {
+            rates.dollars(entry.tokens)
         }
-        return rates.dollars(entry.tokens)
+        return entry.usOnly ? dollars * 1.1 : dollars
     }
 
 }
