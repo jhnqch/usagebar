@@ -132,6 +132,18 @@ struct ClaudeStatusLineTests {
         #expect(garbledSection.menuBar.claude.text == "—")
     }
 
+    @Test("absurd numbers don't crash anything: the percent is capped and so is the countdown")
+    func absurdNumbers() throws {
+        let absurd = editing(try recorded().afterReply) {
+            $0["rate_limits", "five_hour"] = ["used_percentage": 1e20, "resets_at": 1e300]
+        }
+        let run = ClaudeStatusLine.run(input: absurd, saved: nil, now: repliedAt)
+        #expect(run.line == "Opus 5.5 · 5h 100% · wk 11%")
+        let section = snapshot(claudeStatusLine: run.save.flatMap(ClaudeStatusLine.limits(fromSaved:)), at: repliedAt)
+        #expect(section.claude.meters.first?.percentText == "100%")
+        #expect(section.menuBar.claude.text == "99d 23h")
+    }
+
     @Test("rate limits that are null or unreadable print just the model")
     func unreadableRateLimits() throws {
         for rateLimits in [NSNull(), "soon", ["five_hour": "full"]] as [Any] {

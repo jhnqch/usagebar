@@ -73,7 +73,8 @@ final class ClaudeStatusLineMonitor {
         let limits = (try? Data(contentsOf: file)).flatMap(ClaudeStatusLine.limits(fromSaved:))
         if limits != lastLimits {
             lastLimits = limits
-            let windows = [limits?.fiveHour.map { "5h \(Int($0.usedPercent))%" }, limits?.sevenDay.map { "wk \(Int($0.usedPercent))%" }]
+            // `formatted()`, not `Int(_:)`: a saved percent can be any number, and Int(1e20) traps.
+            let windows = [limits?.fiveHour.map { "5h \($0.usedPercent.formatted())%" }, limits?.sevenDay.map { "wk \($0.usedPercent.formatted())%" }]
             log.info("Claude limits from the status line: \(windows.compactMap(\.self), privacy: .public)")
         }
         model.update { $0.claudeStatusLine = limits }

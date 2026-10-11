@@ -7,10 +7,15 @@ struct Clock {
 
     private static let day: TimeInterval = 24 * 60 * 60
 
+    /// Longest countdown shown: "99d 23h". Real windows reset within a week;
+    /// the cap keeps an absurd reset time from overflowing `Int`.
+    private static let maxCountdownMinutes = 100 * 1440 - 1
+
     /// "2d 16h", "1h 05m" or "45m", rounded up to the next minute so it never
     /// promises a reset sooner than it comes.
     func countdown(to end: Date) -> String {
-        let minutes = Int((end.timeIntervalSince(now) / 60).rounded(.up))
+        let raw = (end.timeIntervalSince(now) / 60).rounded(.up)
+        let minutes = Int(min(max(raw, 0), Double(Self.maxCountdownMinutes)))
         switch minutes {
         case 1440...: return "\(minutes / 1440)d \(minutes % 1440 / 60)h"
         case 60...: return "\(minutes / 60)h \(String(format: "%02d", minutes % 60))m"
