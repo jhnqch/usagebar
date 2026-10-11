@@ -117,6 +117,47 @@ struct CodexRolloutTests {
         #expect(entries.map(\.tokens.input) == [1_000, 100, 100])
     }
 
+    @Test("a running total that drops a count it had isn't trusted; a count it never had reads as zero")
+    func missingTotalField() throws {
+        func total(input: Int, cached: Int?) -> [String: Any] {
+            var fields: [String: Any] = ["input_tokens": input, "output_tokens": 0]
+            if let cached { fields["cached_input_tokens"] = cached }
+            return fields
+        }
+        let last = codexTokens(input: 1_000, cached: 800)
+        let dropped = codexUsage([[
+            Rollout.sessionMeta(id: "thread-1", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: total(input: 1_000, cached: 800), last: last),
+            Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00", total: total(input: 2_000, cached: nil), last: last),
+            Rollout.tokenCount(at: "2026-10-09T10:00:12-07:00", total: total(input: 3_000, cached: 2_400), last: last),
+        ]])
+        #expect(dropped.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 3))
+
+        // An older Codex that never logs cache writes.
+        let never = codexUsage([[
+            Rollout.sessionMeta(id: "thread-2", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: total(input: 1_000, cached: 800), last: nil),
+            Rollout.tokenCount(at: "2026-10-09T10:00:06-07:00", total: total(input: 1_000, cached: 800), last: nil),
+            Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00", total: total(input: 2_000, cached: 1_600), last: nil),
+        ]])
+        #expect(never.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 2))
+    }
+
+    @Test("a running total with one count gone down has started over, even when the sum went up")
+    func oneCountDown() throws {
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-1", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 1_000, cached: 800),
+                               last: codexTokens(input: 1_000, cached: 800)),
+            Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00", total: codexTokens(input: 3_000, cached: 500),
+                               last: codexTokens(input: 900, cached: 500)),
+        ]])
+        #expect(entries.map(\.tokens) == [TokenCounts(input: 200, cacheRead: 800), TokenCounts(input: 400, cacheRead: 500)])
+    }
+
     @Test("a file whose first running total carries earlier usage counts only that response's own")
     func carriedTotal() throws {
         let entries = codexUsage([[
@@ -138,7 +179,7 @@ struct CodexRolloutTests {
             // A mistyped running total can't be trusted, so the response's
             // own usage counts, where a mistyped count reads as zero.
             #"{"timestamp":"2026-10-09T17:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":3000,"output_tokens":"lots"},"last_token_usage":{"input_tokens":2000,"output_tokens":"lots"}}}}"#,
-            // A turn whose model can't be read keeps the last one.
+            // A turn whose model can't be read has an unknown model, not the last one.
             #"{"timestamp":"2026-10-09T17:00:04.000Z","type":"turn_context","payload":{"model":7}}"#,
             // No running total: the response's own usage counts.
             #"{"timestamp":"2026-10-09T17:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":500,"output_tokens":5}}}}"#,
@@ -150,7 +191,7 @@ struct CodexRolloutTests {
             #"{"timestamp":"2026-10-09T17:00:09.000Z","type":"response_item","payload":{"type":"message","content":"token_count turn_context"}}"#,
         ]
         let entries = codexUsage([lines.map { Data($0.utf8) }])
-        #expect(entries.map(\.model) == ["unknown", "gpt-6-astra", "gpt-6-astra", "gpt-6-astra"])
+        #expect(entries.map(\.model) == ["unknown", "gpt-6-astra", "unknown", "unknown"])
         #expect(entries.map(\.tokens) == [
             TokenCounts(input: 1_000, output: 10),
             TokenCounts(input: 2_000),

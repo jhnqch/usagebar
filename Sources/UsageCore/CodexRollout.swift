@@ -23,10 +23,11 @@ public enum CodexRollout {
     /// Reads one rollout file in order. Each response's usage is the change
     /// in the running total since the last token count, so a count Codex
     /// sends again adds nothing. Where there's no earlier total (a file's
-    /// first count, which may carry usage from before the file), or the
-    /// total went down (it started over), the response's own usage counts;
-    /// a count whose running total is missing or unreadable adds its
-    /// response's usage to the last total.
+    /// first count, which may carry usage from before the file), or a count
+    /// in it went down (it started over), the response's own usage counts.
+    /// So it does where the running total is missing, unreadable or lacks a
+    /// count the last one had; the response's usage then moves the last
+    /// total on, so the next total doesn't count it again.
     public struct Parser: UsageLogParser {
         /// Names the file's entries: its thread id once `session_meta` is
         /// read, else its file name. A file read again, or moved (as
@@ -34,7 +35,7 @@ public enum CodexRollout {
         private var thread: String
         private var sawMeta = false
         private var model: String?
-        private var total: Usage?
+        private var total: RunningTotal?
         private var responses = 0
 
         public init(path: String) {
@@ -66,15 +67,17 @@ public enum CodexRollout {
                 }
                 return nil
             case let .turnContext(model):
-                if let model { self.model = model }
+                // A turn whose model can't be read is priced as unknown,
+                // not as the turn before it.
+                self.model = model
                 return nil
             case let .tokenCount(total, last):
                 let usage: Usage?
-                if let total {
-                    if let previous = self.total, total.sum >= previous.sum {
-                        usage = total.since(previous)
+                if let total, !total.drops(from: self.total) {
+                    if let previous = self.total, total.covers(previous) {
+                        usage = total.usage.since(previous.usage)
                     } else {
-                        usage = last ?? total
+                        usage = last ?? total.usage
                     }
                     self.total = total
                 } else {
@@ -112,11 +115,6 @@ public enum CodexRollout {
         /// Every token, as `total_tokens` would say.
         var sum: Int { input + output }
 
-        static func + (lhs: Usage, rhs: Usage) -> Usage {
-            Usage(input: lhs.input + rhs.input, cached: lhs.cached + rhs.cached,
-                  cacheWrite: lhs.cacheWrite + rhs.cacheWrite, output: lhs.output + rhs.output)
-        }
-
         /// The change since `earlier`, field by field, never below zero.
         func since(_ earlier: Usage) -> Usage {
             Usage(
@@ -139,7 +137,7 @@ public enum CodexRollout {
             )
         }
 
-        private enum CodingKeys: String, CodingKey {
+        fileprivate enum CodingKeys: String, CodingKey {
             case input = "input_tokens"
             case cached = "cached_input_tokens"
             case cacheWrite = "cache_write_input_tokens"
@@ -164,26 +162,63 @@ public enum CodexRollout {
                               cacheWrite: tokenCount(c, .cacheWrite), output: tokenCount(c, .output))
             }
         }
+    }
 
-        /// A running total, which every later response is measured against:
-        /// unreadable unless it has input and output counts and every count
-        /// it has is a whole number, never negative. A count read as zero
-        /// would look like the total starting over.
-        struct Strict: Decodable {
-            var usage: Usage
+    /// A thread's running total (`total_token_usage`), which every later
+    /// response is measured against. Input and output are always there; the
+    /// cache counts only where this Codex logs them.
+    struct RunningTotal: Equatable, Sendable, Decodable {
+        var input: Int
+        var cached: Int?
+        var cacheWrite: Int?
+        var output: Int
 
-            private struct Unreadable: Error {}
+        var usage: Usage {
+            Usage(input: input, cached: cached ?? 0, cacheWrite: cacheWrite ?? 0, output: output)
+        }
 
-            init(from decoder: any Decoder) throws {
-                let c = try decoder.container(keyedBy: CodingKeys.self)
-                usage = Usage(
-                    input: try c.decode(Int.self, forKey: .input),
-                    cached: try c.decodeIfPresent(Int.self, forKey: .cached) ?? 0,
-                    cacheWrite: try c.decodeIfPresent(Int.self, forKey: .cacheWrite) ?? 0,
-                    output: try c.decode(Int.self, forKey: .output)
-                )
-                guard min(usage.input, usage.cached, usage.cacheWrite, usage.output) >= 0 else { throw Unreadable() }
-            }
+        /// Whether it lacks a count `earlier` had: then it isn't the same
+        /// running total, and a missing count read as zero would make the
+        /// next total count everything again.
+        func drops(from earlier: RunningTotal?) -> Bool {
+            guard let earlier else { return false }
+            return (earlier.cached != nil && cached == nil) || (earlier.cacheWrite != nil && cacheWrite == nil)
+        }
+
+        /// Whether no count has gone down since `earlier`.
+        func covers(_ earlier: RunningTotal) -> Bool {
+            input >= earlier.input && output >= earlier.output
+                && (cached ?? 0) >= (earlier.cached ?? 0) && (cacheWrite ?? 0) >= (earlier.cacheWrite ?? 0)
+        }
+
+        /// The total moved on by one response's own usage.
+        static func + (total: RunningTotal, usage: Usage) -> RunningTotal {
+            RunningTotal(
+                input: total.input + usage.input,
+                cached: total.cached.map { $0 + usage.cached },
+                cacheWrite: total.cacheWrite.map { $0 + usage.cacheWrite },
+                output: total.output + usage.output
+            )
+        }
+
+        init(input: Int, cached: Int?, cacheWrite: Int?, output: Int) {
+            self.input = input
+            self.cached = cached
+            self.cacheWrite = cacheWrite
+            self.output = output
+        }
+
+        private struct Unreadable: Error {}
+
+        /// Unreadable unless it has input and output counts and every count
+        /// it has is a whole number, never negative.
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: Usage.CodingKeys.self)
+            input = try c.decode(Int.self, forKey: .input)
+            cached = try c.decodeIfPresent(Int.self, forKey: .cached)
+            cacheWrite = try c.decodeIfPresent(Int.self, forKey: .cacheWrite)
+            output = try c.decode(Int.self, forKey: .output)
+            guard min(input, cached ?? 0, cacheWrite ?? 0, output) >= 0 else { throw Unreadable() }
         }
     }
 
@@ -192,7 +227,7 @@ public enum CodexRollout {
         enum Kind {
             case sessionMeta(id: String?)
             case turnContext(model: String?)
-            case tokenCount(total: Usage?, last: Usage?)
+            case tokenCount(total: RunningTotal?, last: Usage?)
             case other
         }
 
@@ -228,7 +263,7 @@ public enum CodexRollout {
                     return
                 }
                 kind = .tokenCount(
-                    total: (try? info.decodeIfPresent(Usage.Strict.self, forKey: .total))?.usage,
+                    total: try? info.decodeIfPresent(RunningTotal.self, forKey: .total),
                     last: (try? info.decodeIfPresent(Usage.Lenient.self, forKey: .last))?.usage
                 )
             default:
