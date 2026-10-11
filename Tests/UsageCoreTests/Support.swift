@@ -46,6 +46,59 @@ func codex(weekly: Double = 13, resetsAt: Date = date("2026-10-15T13:16:00-07:00
     )
 }
 
-func snapshot(claude: ClaudeLimits? = nil, codex: CodexLimits? = nil, at time: Date = now) -> UsageSnapshot {
-    UsageEngine.snapshot(from: Readings(claude: claude, codex: codex), now: time, timeZone: losAngeles)
+func snapshot(
+    claude: ClaudeLimits? = nil,
+    codex: CodexLimits? = nil,
+    codexSessionLog: CodexLimits? = nil,
+    at time: Date = now
+) -> UsageSnapshot {
+    UsageEngine.snapshot(
+        from: Readings(claude: claude, codex: codex, codexSessionLog: codexSessionLog),
+        now: time,
+        timeZone: losAngeles
+    )
+}
+
+/// A file under the repo's `Fixtures/` directory.
+func fixtureURL(_ path: String) -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // UsageCoreTests
+        .deletingLastPathComponent()  // Tests
+        .deletingLastPathComponent()  // repo root
+        .appending(path: "Fixtures/\(path)")
+}
+
+/// The lines of a recorded JSON-lines fixture, as they arrived on the wire.
+func fixtureLines(_ path: String) throws -> [Data] {
+    try Data(contentsOf: fixtureURL(path))
+        .split(separator: UInt8(ascii: "\n"))
+        .map { Data($0) }
+}
+
+/// What a conversation with app-server sent and produced while replaying lines.
+struct Replay {
+    var sent: [Data] = []
+    var limits: [CodexLimits] = []
+    var failures: [String] = []
+
+    /// The `method` of every message sent, or "reply" for responses.
+    var sentMethods: [String] {
+        sent.map { line in
+            let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]
+            return object?["method"] as? String ?? "reply"
+        }
+    }
+}
+
+/// Replays app-server stdout lines through a fresh conversation, all received at `time`.
+func replay(_ lines: [Data], at time: Date) -> Replay {
+    var conversation = CodexAppServerConversation()
+    var result = Replay(sent: conversation.start())
+    for line in lines {
+        let step = conversation.receive(line, at: time)
+        result.sent += step.send
+        if let limits = step.limits { result.limits.append(limits) }
+        if let failure = step.failure { result.failures.append(failure) }
+    }
+    return result
 }

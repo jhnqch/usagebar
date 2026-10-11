@@ -1,0 +1,187 @@
+{
+  "now": "2026-10-04T20:24:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "claude": {
+      "plan": "Max",
+      "capturedAt": "2026-10-04T20:21:00-07:00",
+      "fiveHour": {
+        "usedPercent": 42,
+        "resetsAt": "2026-10-04T22:42:00-07:00"
+      },
+      "sevenDay": {
+        "usedPercent": 61,
+        "resetsAt": "2026-10-06T07:00:00-07:00"
+      },
+      "sevenDayFable": {
+        "usedPercent": 34,
+        "resetsAt": "2026-10-06T07:00:00-07:00"
+      }
+    },
+    "codexSessionLogLines": [
+      {
+        "timestamp": "2026-10-05T03:20:39.453Z",
+        "ordinal": 1,
+        "type": "event_msg",
+        "payload": {
+          "type": "task_started",
+          "turn_id": "00000000-0000-0000-0000-000000000000",
+          "root_turn_id": "00000000-0000-0000-0000-000000000000",
+          "started_at": 1791170439,
+          "model_context_window": 258400,
+          "collaboration_mode_kind": "default"
+        }
+      },
+      {
+        "timestamp": "2026-10-05T03:23:06.251Z",
+        "ordinal": 45,
+        "type": "event_msg",
+        "payload": {
+          "type": "token_count",
+          "info": {
+            "total_token_usage": {
+              "input_tokens": 164659,
+              "cached_input_tokens": 129152,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 1189,
+              "reasoning_output_tokens": 9,
+              "total_tokens": 165848
+            },
+            "last_token_usage": {
+              "input_tokens": 34805,
+              "cached_input_tokens": 34432,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 21,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 34826
+            },
+            "model_context_window": 258400
+          },
+          "rate_limits": {
+            "limit_id": "codex",
+            "limit_name": null,
+            "primary": {
+              "used_percent": 35.0,
+              "window_minutes": 300,
+              "resets_at": 1791185766
+            },
+            "secondary": {
+              "used_percent": 5.0,
+              "window_minutes": 10080,
+              "resets_at": 1791772566
+            },
+            "credits": {
+              "has_credits": false,
+              "unlimited": false,
+              "balance": "0"
+            },
+            "individual_limit": null,
+            "spend_control_reached": null,
+            "plan_type": "plus",
+            "rate_limit_reached_type": null
+          }
+        }
+      },
+      {
+        "timestamp": "2026-10-05T03:23:23.251Z",
+        "ordinal": 52,
+        "type": "event_msg",
+        "payload": {
+          "type": "token_count",
+          "info": {
+            "total_token_usage": {
+              "input_tokens": 199862,
+              "cached_input_tokens": 163840,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 1563,
+              "reasoning_output_tokens": 9,
+              "total_tokens": 201425
+            },
+            "last_token_usage": {
+              "input_tokens": 35203,
+              "cached_input_tokens": 34688,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 374,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 35577
+            },
+            "model_context_window": 258400
+          },
+          "rate_limits": {
+            "limit_id": "codex",
+            "limit_name": null,
+            "primary": {
+              "used_percent": 38.0,
+              "window_minutes": 300,
+              "resets_at": 1791185766
+            },
+            "secondary": {
+              "used_percent": 6.0,
+              "window_minutes": 10080,
+              "resets_at": 1791772566
+            },
+            "credits": {
+              "has_credits": false,
+              "unlimited": false,
+              "balance": "0"
+            },
+            "individual_limit": null,
+            "spend_control_reached": null,
+            "plan_type": "plus",
+            "rate_limit_reached_type": null
+          }
+        }
+      },
+      {
+        "timestamp": "2026-10-05T03:23:41.086Z",
+        "ordinal": 56,
+        "type": "event_msg",
+        "payload": {
+          "type": "token_count",
+          "info": {
+            "total_token_usage": {
+              "input_tokens": 235812,
+              "cached_input_tokens": 198912,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 1974,
+              "reasoning_output_tokens": 9,
+              "total_tokens": 237786
+            },
+            "last_token_usage": {
+              "input_tokens": 35950,
+              "cached_input_tokens": 35072,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 411,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 36361
+            },
+            "model_context_window": 258400
+          },
+          "rate_limits": {
+            "limit_id": "codex",
+            "limit_name": null,
+            "primary": {
+              "used_percent": 38.0,
+              "window_minutes": 300,
+              "resets_at": 1791185766
+            },
+            "secondary": {
+              "used_percent": 6.0,
+              "window_minutes": 10080,
+              "resets_at": 1791772566
+            },
+            "credits": {
+              "has_credits": false,
+              "unlimited": false,
+              "balance": "0"
+            },
+            "individual_limit": null,
+            "spend_control_reached": null,
+            "plan_type": "plus",
+            "rate_limit_reached_type": null
+          }
+        }
+      }
+    ]
+  }
+}

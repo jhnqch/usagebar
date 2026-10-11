@@ -12,7 +12,7 @@ public enum UsageEngine {
             Window(id: "claude.sevenDayFable", label: "Weekly · Fable", reading: claude?.sevenDayFable),
         ].map { $0.current(at: now) }
 
-        let codex = readings.codex
+        let codex = fresher(readings.codex, readings.codexSessionLog)
         var codexWindows = (codex?.windows ?? [])
             .sorted { $0.windowMinutes < $1.windowMinutes }
             .map {
@@ -40,13 +40,19 @@ public enum UsageEngine {
                 note: nil
             ),
             codex: ServiceSection(
-                plan: codex?.plan.map(planBadge),
+                plan: codex?.plan.map(codexPlanBadge),
                 updatedText: codex?.capturedAt.map { clock.updatedText($0) },
                 meters: codexWindows.map { meter($0, clock: clock) },
                 note: codex == nil || codexHasFiveHour || codex?.windows.isEmpty == true
                     ? nil : "No 5-hour limit on your plan"
             )
         )
+    }
+
+    /// Whichever Codex reading was taken later; app-server on a tie.
+    private static func fresher(_ appServer: CodexLimits?, _ sessionLog: CodexLimits?) -> CodexLimits? {
+        guard let appServer, let sessionLog else { return appServer ?? sessionLog }
+        return (sessionLog.capturedAt ?? .distantPast) > (appServer.capturedAt ?? .distantPast) ? sessionLog : appServer
     }
 
     /// The highest window's percent, or, while any window is maxed, the time
@@ -87,6 +93,15 @@ public enum UsageEngine {
 
     private static func planBadge(_ plan: String) -> String {
         plan.prefix(1).uppercased() + plan.dropFirst()
+    }
+
+    /// Codex reports plan ids ("prolite", "edu_plus"); show them as names.
+    private static func codexPlanBadge(_ plan: String) -> String {
+        plan.replacingOccurrences(of: "prolite", with: "pro_lite")
+            .replacingOccurrences(of: "promax", with: "pro_max")
+            .split(separator: "_")
+            .map { planBadge(String($0)) }
+            .joined(separator: " ")
     }
 
     /// Whole percent, rounded down so the text never shows a level the value hasn't reached.

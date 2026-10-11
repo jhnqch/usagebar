@@ -119,4 +119,25 @@ struct FixtureTests {
         #expect(snapshot.claude.meters[0].resetText == "Resets in 2h 18m (11:18 AM)")
         #expect(snapshot.codex.meters[0].resetText == "Resets Wed 7:36 AM")
     }
+
+    @Test("a fixture can carry recorded app-server messages, decoded as the app decodes them")
+    func recordedAppServerFixture() throws {
+        let fixture = try loadFixture("codex-live")
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        #expect(snapshot.menuBar.text == "✳ 61% · ⌘ 0%")
+        #expect(snapshot.codex.plan == "Plus")
+        #expect(snapshot.codex.updatedText == "Updated just now")
+        #expect(snapshot.codex.meters.map(\.label) == ["Weekly"])
+        #expect(snapshot.codex.meters.map(\.resetText) == ["Resets Sat 9:33 PM"])
+    }
+
+    @Test("a fixture can carry recorded session-log lines")
+    func recordedSessionLogFixture() throws {
+        let fixture = try loadFixture("codex-session-log")
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        #expect(snapshot.menuBar.text == "✳ 61% · ⌘ 38%")
+        #expect(snapshot.codex.plan == "Plus")
+        #expect(snapshot.codex.meters.map(\.label) == ["5-hour session", "Weekly"])
+        #expect(snapshot.codex.meters.map(\.percentText) == ["38%", "6%"])
+    }
 }

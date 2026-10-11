@@ -4,11 +4,17 @@ import Foundation
 /// clock, into a `UsageSnapshot`. A missing reading means "no data".
 public struct Readings: Decodable, Equatable, Sendable {
     public var claude: ClaudeLimits?
+    /// Codex limits from `codex app-server`, the live source.
     public var codex: CodexLimits?
+    /// The latest Codex record in the session logs: the fallback when
+    /// app-server isn't available, and fresher whenever another Codex
+    /// process ran a turn since app-server last reported.
+    public var codexSessionLog: CodexLimits?
 
-    public init(claude: ClaudeLimits? = nil, codex: CodexLimits? = nil) {
+    public init(claude: ClaudeLimits? = nil, codex: CodexLimits? = nil, codexSessionLog: CodexLimits? = nil) {
         self.claude = claude
         self.codex = codex
+        self.codexSessionLog = codexSessionLog
     }
 }
 
@@ -84,7 +90,11 @@ public struct CodexWindow: Equatable, Sendable {
 
 extension Readings {
     func shifted(by offset: TimeInterval) -> Readings {
-        Readings(claude: claude?.shifted(by: offset), codex: codex?.shifted(by: offset))
+        Readings(
+            claude: claude?.shifted(by: offset),
+            codex: codex?.shifted(by: offset),
+            codexSessionLog: codexSessionLog?.shifted(by: offset)
+        )
     }
 }
 
@@ -126,13 +136,36 @@ extension CodexLimits {
 
 extension Readings {
     private enum CodingKeys: String, CodingKey {
-        case claude, codex
+        case claude, codex, codexSessionLog
+        /// Recorded app-server stdout lines, replayed into `codex`.
+        case codexAppServerMessages
+        /// Recorded session-log lines, read into `codexSessionLog`.
+        case codexSessionLogLines
+    }
+
+    /// Recorded app-server messages and the time they arrived.
+    private struct RecordedAppServer: Decodable {
+        var receivedAt: Date
+        var messages: [Lenient<IncomingMessage>]
+
+        /// The reading the app would hold after these messages.
+        var limits: CodexLimits? {
+            var conversation = CodexAppServerConversation()
+            _ = conversation.start()
+            return messages.compactMap(\.value).reduce(nil) { latest, message in
+                conversation.receive(message, at: receivedAt).limits ?? latest
+            }
+        }
     }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         claude = try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claude)
-        codex = try? c.decodeIfPresent(CodexLimits.self, forKey: .codex)
+        codex = (try? c.decodeIfPresent(CodexLimits.self, forKey: .codex))
+            ?? (try? c.decodeIfPresent(RecordedAppServer.self, forKey: .codexAppServerMessages))?.limits
+        codexSessionLog = (try? c.decodeIfPresent(CodexLimits.self, forKey: .codexSessionLog))
+            ?? (try? c.decodeIfPresent([Lenient<CodexSessionLog.Line>].self, forKey: .codexSessionLogLines))
+                .flatMap { CodexSessionLog.latest(of: $0.compactMap(\.value)) }
     }
 }
 
@@ -187,7 +220,7 @@ extension CodexWindow: Decodable {
 
 /// Decodes a `T`, or nil when that element is malformed, so one bad array
 /// element doesn't sink its siblings.
-private struct Lenient<T: Decodable>: Decodable {
+struct Lenient<T: Decodable>: Decodable {
     var value: T?
 
     init(from decoder: any Decoder) throws {
