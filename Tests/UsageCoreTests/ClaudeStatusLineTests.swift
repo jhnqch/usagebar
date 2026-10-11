@@ -186,7 +186,7 @@ struct ClaudeStatusLineTests {
         arguments: [
             ("claude-status-line", "✳ 19% · ⌘ 13%", ["19%", "11%", "34%"], "Resets in 3h 04m (1:50 AM)"),
             ("claude-status-line-near", "✳ 93% · ⌘ 13%", ["93%", "71%", "34%"], "Resets in 2h 18m (4:58 PM)"),
-            ("claude-status-line-maxed", "✳ 1h 05m · ⌘ 13%", ["100%", "84%", "58%"], "Limit reached · resets in 1h 05m (3:45 PM)"),
+            ("claude-status-line-maxed", "✳ 1h 05m · ⌘ 13%", ["100%", "84%", "58%"], "Resets in 1h 05m (3:45 PM)"),
             ("claude-status-line-reset", "✳ 64% · ⌘ 13%", ["0%", "64%", "34%"], "Reset at 2:30 PM"),
         ]
     )

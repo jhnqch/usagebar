@@ -61,6 +61,28 @@ public struct Meter: Equatable, Sendable, Identifiable {
     /// What the window has used so far at API prices, e.g.
     /// "$4.12 · 1.9M tokens this session"; nil where it isn't tracked.
     public var usageText: String? = nil
+    /// Where the pace tick sits: the fraction of the window that has
+    /// elapsed, 0...1. Nil without a reading, or once the reset has passed
+    /// (the next window's start isn't known yet).
+    public var elapsed: Double? = nil
+    /// The tick's VoiceOver label: "54% of window elapsed".
+    public var elapsedText: String? = nil
+    /// The line under the meter saying where the pace leads; nil without a
+    /// reading, in a window's first 10%, or once its reset has passed.
+    public var prediction: PacePrediction? = nil
+}
+
+/// Where a window's pace leads: "Ahead of pace: limit around Sun 5 PM",
+/// "Below pace: about 78% by reset" or "Limit reached".
+public struct PacePrediction: Equatable, Sendable {
+    public var text: String
+    /// On course to hit the limit before the reset: drawn as a warning.
+    public var isAhead: Bool
+
+    public init(text: String, isAhead: Bool) {
+        self.text = text
+        self.isAhead = isAhead
+    }
 }
 
 /// One bar per local calendar day of the weekly window, stacked by model in

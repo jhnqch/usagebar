@@ -24,16 +24,16 @@ struct Clock {
     }
 
     /// "Resets in 2h 18m (4:58 PM)" within a day, "Resets Tue 7:00 AM" beyond,
-    /// "Reset at 2:00 PM" once passed. Maxed windows lead with "Limit reached".
-    func resetText(_ resetsAt: Date, maxed: Bool) -> String {
+    /// "Reset at 2:00 PM" once passed. (A maxed window's pace line says
+    /// "Limit reached".)
+    func resetText(_ resetsAt: Date) -> String {
         let distance = resetsAt.timeIntervalSince(now)
         if distance <= 0 {
             return -distance < Self.day ? "Reset at \(format(resetsAt, "h:mm a"))" : "Reset \(format(resetsAt, "EEE h:mm a"))"
         }
-        let when = distance < Self.day
-            ? "in \(countdown(to: resetsAt)) (\(format(resetsAt, "h:mm a")))"
-            : format(resetsAt, "EEE h:mm a")
-        return maxed ? "Limit reached · resets \(when)" : "Resets \(when)"
+        return distance < Self.day
+            ? "Resets in \(countdown(to: resetsAt)) (\(format(resetsAt, "h:mm a")))"
+            : "Resets \(format(resetsAt, "EEE h:mm a"))"
     }
 
     /// "Updated just now", "Updated 3 min ago", "Updated at 11:05 AM" (today),
@@ -46,6 +46,21 @@ struct Clock {
             return "Updated at \(format(capturedAt, "h:mm a"))"
         }
         return "Updated \(format(capturedAt, "EEE h:mm a"))"
+    }
+
+    /// A rough time and the time it stands for: "4:30 PM", to the nearest 5
+    /// minutes, when that's today; "Sun 5 PM", to the nearest hour, on
+    /// another day. Rounds on the local clock, so a time zone off the hour
+    /// still lands on :00 or :05.
+    func approximately(_ date: Date) -> (date: Date, text: String) {
+        guard let hour = calendar.dateInterval(of: .hour, for: date) else { return (date, format(date, "EEE h:mm a")) }
+        let minutes = date.timeIntervalSince(hour.start) / 60
+        let nearestFive = hour.start + (minutes / 5).rounded() * 5 * 60
+        if calendar.isDate(nearestFive, inSameDayAs: now) {
+            return (nearestFive, format(nearestFive, "h:mm a"))
+        }
+        let nearestHour = minutes < 30 ? hour.start : hour.end
+        return (nearestHour, format(nearestHour, "EEE h a"))
     }
 
     /// "Tue 7 AM", or "Tue 7:30 AM" off the hour.

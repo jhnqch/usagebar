@@ -16,10 +16,10 @@ public enum UsageEngine {
         let fiveHour = merged(statusLine?.fiveHour, claude?.fiveHour)
         let weekly = merged(statusLine?.sevenDay, claude?.sevenDay)
         let claudeWindows = [
-            Window(id: "claude.fiveHour", label: "5-hour session", reading: fiveHour),
-            Window(id: "claude.sevenDay", label: "Weekly · all models", reading: weekly),
+            Window(id: "claude.fiveHour", label: "5-hour session", minutes: fiveHourMinutes, reading: fiveHour),
+            Window(id: "claude.sevenDay", label: "Weekly · all models", minutes: weekMinutes, reading: weekly),
             // Fable comes only from the usage endpoint.
-            Window(id: "claude.sevenDayFable", label: "Weekly · Fable", reading: claude?.sevenDayFable),
+            Window(id: "claude.sevenDayFable", label: "Weekly · Fable", minutes: weekMinutes, reading: claude?.sevenDayFable),
         ].map { $0.current(at: now) }
 
         let codex = fresher(readings.codex, readings.codexSessionLog)
@@ -29,6 +29,7 @@ public enum UsageEngine {
                 Window(
                     id: "codex.\($0.windowMinutes)m",
                     label: label(forWindowMinutes: $0.windowMinutes),
+                    minutes: $0.windowMinutes,
                     reading: $0.reading
                 ).current(at: now)
             }
@@ -37,7 +38,7 @@ public enum UsageEngine {
         // comes in the primary slot.
         let codexWeekly = codex?.windows.first { $0.windowMinutes == weekMinutes }?.reading
         if codexWindows.isEmpty {
-            codexWindows = [Window(id: "codex.10080m", label: "Weekly", reading: nil)]
+            codexWindows = [Window(id: "codex.10080m", label: "Weekly", minutes: weekMinutes, reading: nil)]
         }
 
         return UsageSnapshot(
@@ -75,6 +76,7 @@ public enum UsageEngine {
 
     /// A weekly window's length, as Codex reports it.
     private static let weekMinutes = 7 * 24 * 60
+    private static let fiveHourMinutes = 5 * 60
 
     /// One Claude window from the status line and the usage endpoint. Capture
     /// times can't decide it: an idle Claude Code session re-sends its last
@@ -111,13 +113,17 @@ public enum UsageEngine {
             return Meter(id: window.id, label: window.label, percentText: "—", fraction: 0, level: .normal, resetText: nil)
         }
         let level = Level(percent: reading.usedPercent)
+        let pace = Pace(reading: reading, minutes: window.minutes, clock: clock)
         return Meter(
             id: window.id,
             label: window.label,
             percentText: percentText(reading.usedPercent),
             fraction: min(max(reading.usedPercent, 0), 100) / 100,
             level: level,
-            resetText: clock.resetText(reading.resetsAt, maxed: level == .maxed)
+            resetText: clock.resetText(reading.resetsAt),
+            elapsed: pace?.elapsed,
+            elapsedText: pace.map { "\(Int(($0.elapsed * 100).rounded()))% of window elapsed" },
+            prediction: pace?.prediction
         )
     }
 
@@ -161,10 +167,11 @@ extension [Meter] {
     }
 }
 
-/// A named limit window and its reading, if any.
+/// A named limit window, its length and its reading, if any.
 private struct Window {
     var id: String
     var label: String
+    var minutes: Int
     var reading: LimitReading?
 
     func current(at now: Date) -> Window {

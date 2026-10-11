@@ -50,13 +50,16 @@ struct PopoverTests {
         #expect(meter.percentText == "100%")
         #expect(meter.fraction == 1)
         #expect(meter.level == .maxed)
-        #expect(meter.resetText == "Limit reached · resets in 1h 05m (3:45 PM)")
+        #expect(meter.resetText == "Resets in 1h 05m (3:45 PM)")
+        #expect(meter.prediction?.text == "Limit reached")
         #expect(snapshot.menuBar.text == "✳ 1h 05m · ⌘ 13%")
     }
 
     @Test("a maxed weekly window names the reset day")
     func maxedWeekly() {
-        #expect(snapshot(claude: claude(weekly: 100)).claude.meters[1].resetText == "Limit reached · resets Tue 7:00 AM")
+        let meter = snapshot(claude: claude(weekly: 100)).claude.meters[1]
+        #expect(meter.resetText == "Resets Tue 7:00 AM")
+        #expect(meter.prediction?.text == "Limit reached")
     }
 
     @Test("a meter past its reset reads 0% and says when it reset")
