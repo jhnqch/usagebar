@@ -64,7 +64,7 @@ if let flag = arguments.firstIndex(of: "--codex-usage") {
 
 MainActor.assumeIsolated {
     let app = NSApplication.shared
-    let delegate = AppDelegate(model: AppModel(readings: SampleReadings.load()))
+    let delegate = AppDelegate(model: AppModel(readings: SampleReadings.load(), alertMemory: AlertMemoryFile.load()))
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
     withExtendedLifetime(delegate) { app.run() }

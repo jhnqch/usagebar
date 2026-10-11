@@ -9,12 +9,20 @@ import UsageCore
 final class AppModel {
     private(set) var snapshot: UsageSnapshot
     @ObservationIgnored var onChange: ((UsageSnapshot) -> Void)?
+    /// The alert memory changed: save it before the alerts are posted, so a
+    /// relaunch never repeats them.
+    @ObservationIgnored var onAlertMemoryChange: ((AlertMemory) -> Void)?
+    /// Alerts to post.
+    @ObservationIgnored var onAlerts: (([LimitAlert]) -> Void)?
     @ObservationIgnored private var readings: Readings
+    @ObservationIgnored private var alertMemory: AlertMemory
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
-    init(readings: Readings) {
+    /// Alerts wait for the first `refresh()`, once something can post them.
+    init(readings: Readings, alertMemory: AlertMemory = AlertMemory()) {
         self.readings = readings
-        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current)
+        self.alertMemory = alertMemory
+        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory)
     }
 
     /// Changes the readings and, if they changed, recomputes the snapshot.
@@ -26,13 +34,20 @@ final class AppModel {
         refresh()
     }
 
-    /// Recomputes the snapshot against the current clock.
+    /// Recomputes the snapshot against the current clock, and posts any alerts.
     func refresh() {
-        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current)
+        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory)
+        if snapshot.alertMemory != alertMemory {
+            alertMemory = snapshot.alertMemory
+            onAlertMemoryChange?(alertMemory)
+        }
+        if !snapshot.alerts.isEmpty {
+            onAlerts?(snapshot.alerts)
+        }
         onChange?(snapshot)
     }
 
-    /// Keeps countdowns and "Updated N min ago" current.
+    /// Keeps countdowns and "Updated N min ago" current, and notices resets.
     func startTicking(every interval: Duration = .seconds(30)) {
         ticker?.cancel()
         ticker = Task { [weak self] in

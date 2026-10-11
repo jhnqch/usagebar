@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let claudeUsage: ClaudeUsageMonitor
     private let claudeUsageLog: UsageLogMonitor<ClaudeTranscript.Parser>
     private let codexUsageLog: UsageLogMonitor<CodexRollout.Parser>
+    private let notifier = LimitNotifier()
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private let popoverFit = PopoverFit()
@@ -43,6 +44,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = true
 
         model.onChange = { [weak self] snapshot in self?.show(snapshot.menuBar) }
+        model.onAlertMemoryChange = { [log] memory in
+            do {
+                try AlertMemoryFile.save(memory)
+            } catch {
+                log.error("can't save the alert memory: \(error, privacy: .public)")
+            }
+        }
+        model.onAlerts = { [notifier] alerts in notifier.post(alerts) }
+        notifier.onOpen = { [weak self] in self?.showPopover() }
         model.refresh()
         model.startTicking()
         claudeStatusLine.start()
@@ -98,15 +108,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown {
             popover.performClose(sender)
         } else {
-            refresh(force: false)
-            fitPopover()
-            // Follow the system's light/dark setting, not the menu bar's
-            // appearance (which tracks the wallpaper).
-            popover.appearance = NSApp.effectiveAppearance
-            NSApp.activate()
-            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            showPopover()
         }
+    }
+
+    private func showPopover() {
+        guard !popover.isShown, let button = statusItem?.button else { return }
+        refresh(force: false)
+        fitPopover()
+        // Follow the system's light/dark setting, not the menu bar's
+        // appearance (which tracks the wallpaper).
+        popover.appearance = NSApp.effectiveAppearance
+        NSApp.activate()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
     }
 
     /// Caps the popover to the screen the status item is on; past that, its
