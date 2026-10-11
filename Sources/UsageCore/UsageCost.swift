@@ -6,15 +6,25 @@ enum UsageCost {
     static let fiveHours: TimeInterval = 5 * 60 * 60
 
     /// "$4.12 · 1.9M tokens this session" for the current 5-hour window
-    /// (its reset minus 5 hours, up to now), or nil without a reading. Once
-    /// the reset has passed, the next session started after it, so it counts
-    /// from the reset until fresh numbers arrive.
+    /// (its reset minus 5 hours, up to now), or nil without a reading.
+    ///
+    /// Once the reset has passed, the next session starts with the first
+    /// reply after it and lasts 5 hours, so until fresh numbers arrive every
+    /// reply since the reset belongs to it, for 5 hours. After that, that
+    /// session has ended too and where the next one started isn't known:
+    /// nil rather than a total spanning sessions.
     static func session(_ usage: [UsageEntry], window: LimitReading?, now: Date, prices: PriceTable) -> String? {
         guard let window else { return nil }
-        let start = window.resetsAt > now ? window.resetsAt - fiveHours : window.resetsAt
-        let entries = usage.filter { $0.timestamp >= start }
-        let total = Total(entries, prices: prices)
-        return "\(total.text) this session"
+        let start: Date
+        if window.resetsAt > now {
+            start = window.resetsAt - fiveHours
+        } else if now.timeIntervalSince(window.resetsAt) <= fiveHours {
+            start = window.resetsAt
+        } else {
+            return nil
+        }
+        let entries = usage.filter { start <= $0.timestamp && $0.timestamp <= now }
+        return "\(Total(entries, prices: prices).text) this session"
     }
 
     static let week: TimeInterval = 7 * 24 * 60 * 60

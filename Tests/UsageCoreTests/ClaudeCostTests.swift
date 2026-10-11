@@ -62,6 +62,20 @@ struct ClaudeCostTests {
         #expect(snapshot(claude: limits, claudeUsage: usage).claude.meters[0].usageText == "$0.10 · 5K tokens this session")
     }
 
+    @Test("once the 5-hour reset is more than 5 hours old, the session line hides rather than span sessions")
+    func staleSessionReset() {
+        // The session after a 9:00 AM reset started at its first reply and
+        // has ended by 2:40 PM; where the next one started isn't known.
+        let usage = claudeUsage([
+            transcriptLine(id: "msg_1", at: "2026-10-10T09:30:00-07:00", output: 50_000),
+            transcriptLine(id: "msg_2", at: "2026-10-10T14:10:00-07:00", output: 5_000),
+        ])
+        let limits = claude(fiveHourResetsAt: date("2026-10-10T09:00:00-07:00"))
+        #expect(snapshot(claude: limits, claudeUsage: usage).claude.meters[0].usageText == nil)
+        #expect(snapshot(claude: limits, claudeUsage: usage, at: date("2026-10-10T14:00:00-07:00")).claude.meters[0].usageText
+            == "$1.00 · 50K tokens this session")
+    }
+
     @Test("Haiku 5.5 charges more for a prompt over 100,000 tokens, cache reads included")
     func longContext() {
         // Up to 100,000: $0.01 read, $0.50 output. Over: $0.05 read, $2.50 output.
