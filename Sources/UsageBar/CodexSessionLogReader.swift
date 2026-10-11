@@ -17,9 +17,9 @@ actor CodexSessionLogReader {
     private static let maxFiles = 10
 
     private let directory: URL
-    /// Each file's latest reading, keyed by path, valid while its size and
+    /// Each file's last record, keyed by path, valid while its size and
     /// modification time are unchanged.
-    private var cache: [String: (stamp: Stamp, limits: CodexLimits?)] = [:]
+    private var cache: [String: (stamp: Stamp, record: CodexSessionLog.Record?)] = [:]
 
     private struct Stamp: Equatable {
         var modified: Date
@@ -34,16 +34,20 @@ actor CodexSessionLogReader {
         let files = recentFiles()
         let paths = Set(files.map(\.0.path))
         cache = cache.filter { paths.contains($0.key) }
-        var best: CodexLimits?
+        // The newest record across files, by its timestamp or, when that
+        // can't be read, by its file's last change.
+        var best: (record: CodexSessionLog.Record, time: Date)?
         for (url, stamp) in files {
             // A file can't hold a record newer than its last change.
-            if let found = best?.capturedAt, stamp.modified < found { break }
-            let limits = limits(in: url, stamp: stamp)
-            if let limits, (limits.capturedAt ?? .distantPast) >= (best?.capturedAt ?? .distantPast) {
-                best = limits
+            if let best, stamp.modified < best.time { break }
+            guard let record = record(in: url, stamp: stamp) else { continue }
+            let time = record.capturedAt ?? stamp.modified
+            if time >= best?.time ?? .distantPast {
+                best = (record, time)
             }
         }
-        return best
+        // An unreadable newest record gives nil: an older reading is stale.
+        return best?.record.limits
     }
 
     /// The most recently changed session files, newest first.
@@ -64,11 +68,11 @@ actor CodexSessionLogReader {
         return Array(found.sorted { $0.1.modified > $1.1.modified }.prefix(Self.maxFiles))
     }
 
-    private func limits(in url: URL, stamp: Stamp) -> CodexLimits? {
-        if let cached = cache[url.path], cached.stamp == stamp { return cached.limits }
-        let limits = tail(of: url, size: stamp.size).flatMap(CodexSessionLog.latestLimits(in:))
-        cache[url.path] = (stamp, limits)
-        return limits
+    private func record(in url: URL, stamp: Stamp) -> CodexSessionLog.Record? {
+        if let cached = cache[url.path], cached.stamp == stamp { return cached.record }
+        let record = tail(of: url, size: stamp.size).flatMap(CodexSessionLog.lastRecord(in:))
+        cache[url.path] = (stamp, record)
+        return record
     }
 
     private func tail(of url: URL, size: Int) -> Data? {

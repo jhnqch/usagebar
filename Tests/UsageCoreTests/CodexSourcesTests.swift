@@ -7,7 +7,7 @@ import UsageCore
 /// pushes our app-server never sees).
 @Suite("Codex sources")
 struct CodexSourcesTests {
-    let plusLog = CodexSessionLog.latestLimits(in: try! Data(contentsOf: fixtureURL("codex/session-log-plus.jsonl")))
+    let plusLog = CodexSessionLog.lastRecord(in: try! Data(contentsOf: fixtureURL("codex/session-log-plus.jsonl")))?.limits
 
     func appServerReading(at time: Date) throws -> CodexLimits? {
         replay(Array(try fixtureLines("codex/app-server.jsonl").prefix(3)), at: time).limits.last
@@ -44,9 +44,9 @@ struct CodexSourcesTests {
         let read = String(decoding: lines[2], as: UTF8.self)
             .replacingOccurrences(of: #""windowDurationMins":10080,"#, with: "")
         let appServer = replay([lines[0], Data(read.utf8)], at: now).limits.last
-        let log = CodexSessionLog.latestLimits(in: Data("""
+        let log = CodexSessionLog.lastRecord(in: Data("""
         {"timestamp":"2026-10-10T20:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":null}}
-        """.utf8))
+        """.utf8))?.limits
         #expect(appServer == nil)
         #expect(log == nil)
         let section = snapshot(codex: appServer, codexSessionLog: log)

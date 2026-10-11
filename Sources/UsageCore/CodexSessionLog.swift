@@ -3,40 +3,47 @@ import Foundation
 /// The fallback Codex source: the rate-limit records Codex writes into its
 /// session logs (`~/.codex/sessions/YYYY/MM/DD/*.jsonl`) after each turn.
 public enum CodexSessionLog {
-    /// The latest Codex reading among session-log lines (one JSON object
-    /// per line). Lines that aren't rate-limit records, or can't be read,
-    /// are skipped; so is a partial first line from reading a file's tail.
-    public static func latestLimits(in log: Data) -> CodexLimits? {
+    /// One Codex rate-limit record.
+    public struct Record: Equatable, Sendable {
+        /// When Codex wrote it; nil when the timestamp can't be read.
+        public var capturedAt: Date?
+        /// Its limits; nil when the record can't be read (a changed format,
+        /// say), which makes any older reading stale too.
+        public var limits: CodexLimits?
+    }
+
+    /// The last Codex rate-limit record in a log (one JSON object per line),
+    /// or nil when there's none. Codex appends lines in order, so the last
+    /// one is the latest, whatever its timestamp says. Lines that aren't
+    /// Codex rate-limit records are skipped, including a partial first
+    /// line from reading a file's tail.
+    public static func lastRecord(in log: Data) -> Record? {
         let decoder = JSONDecoder()
         let lines = log.split(separator: UInt8(ascii: "\n")).compactMap {
             try? decoder.decode(Line.self, from: Data($0))
         }
-        return latest(of: lines)
+        return lastRecord(of: lines)
     }
 
-    static func latest(of lines: [Line]) -> CodexLimits? {
-        var best: CodexLimits?
-        for line in lines {
-            guard let limits = line.limits else { continue }
-            if (limits.capturedAt ?? .distantPast) >= (best?.capturedAt ?? .distantPast) {
-                best = limits
-            }
-        }
-        return best
+    static func lastRecord(of lines: [Line]) -> Record? {
+        lines.last { $0.record != nil }?.record
     }
 
     /// One session-log line. Only `event_msg` lines whose payload is a
-    /// `token_count` with `rate_limits` carry a reading.
+    /// `token_count` with `rate_limits` for the main `codex` bucket are
+    /// records.
     struct Line: Decodable {
-        var limits: CodexLimits?
+        var record: Record?
 
         private enum CodingKeys: String, CodingKey {
             case timestamp, type, payload
         }
 
         private struct Payload: Decodable {
-            var type: String?
-            var rateLimits: RateLimits?
+            var isTokenCount: Bool
+            /// nil when there are no rate limits; `.failure` when they're
+            /// there but can't be read.
+            var rateLimits: Result<RateLimits, any Error>?
 
             private enum CodingKeys: String, CodingKey {
                 case type
@@ -45,8 +52,10 @@ public enum CodexSessionLog {
 
             init(from decoder: any Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
-                type = try? c.decodeIfPresent(String.self, forKey: .type)
-                rateLimits = try? c.decodeIfPresent(RateLimits.self, forKey: .rateLimits)
+                isTokenCount = (try? c.decodeIfPresent(String.self, forKey: .type)) == "token_count"
+                if c.contains(.rateLimits), (try? c.decodeNil(forKey: .rateLimits)) == false {
+                    rateLimits = Result { try c.decode(RateLimits.self, forKey: .rateLimits) }
+                }
             }
         }
 
@@ -76,16 +85,26 @@ public enum CodexSessionLog {
             guard
                 (try? c.decodeIfPresent(String.self, forKey: .type)) == "event_msg",
                 let payload = try? c.decodeIfPresent(Payload.self, forKey: .payload),
-                payload.type == "token_count",
+                payload.isTokenCount,
                 let rateLimits = payload.rateLimits
             else { return }
             let timestamp = (try? c.decodeIfPresent(String.self, forKey: .timestamp)).flatMap(Self.date)
-            limits = RateLimitWindow.codexLimits(
-                limitID: rateLimits.limitID,
-                plan: rateLimits.planType,
-                windows: [rateLimits.primary, rateLimits.secondary],
-                capturedAt: timestamp
-            )
+            switch rateLimits {
+            case let .success(rateLimits):
+                // Another bucket (a per-model quota, say) isn't about these meters.
+                guard rateLimits.limitID == nil || rateLimits.limitID == "codex" else { return }
+                record = Record(
+                    capturedAt: timestamp,
+                    limits: RateLimitWindow.codexLimits(
+                        limitID: rateLimits.limitID,
+                        plan: rateLimits.planType,
+                        windows: [rateLimits.primary, rateLimits.secondary],
+                        capturedAt: timestamp
+                    )
+                )
+            case .failure:
+                record = Record(capturedAt: timestamp, limits: nil)
+            }
         }
 
         /// Session-log timestamps carry milliseconds: "2026-10-10T20:22:28.809Z".

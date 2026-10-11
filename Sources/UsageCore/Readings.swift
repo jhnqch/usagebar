@@ -169,7 +169,7 @@ extension Readings {
             ?? (try? c.decodeIfPresent(RecordedAppServer.self, forKey: .codexAppServerMessages))?.limits
         codexSessionLog = (try? c.decodeIfPresent(CodexLimits.self, forKey: .codexSessionLog))
             ?? (try? c.decodeIfPresent([Lenient<CodexSessionLog.Line>].self, forKey: .codexSessionLogLines))
-                .flatMap { CodexSessionLog.latest(of: $0.compactMap(\.value)) }
+                .flatMap { CodexSessionLog.lastRecord(of: $0.compactMap(\.value))?.limits }
     }
 }
 
