@@ -1,0 +1,70 @@
+import Foundation
+import Testing
+import UsageCore
+
+@Suite("Readings files")
+struct FixtureTests {
+    @Test("missing, extra and renamed fields degrade one row to a dash")
+    func tolerantDecoding() throws {
+        let json = """
+        {
+          "now": "2026-10-10T14:40:00-07:00",
+          "timeZone": "America/Los_Angeles",
+          "somethingNew": true,
+          "readings": {
+            "claude": {
+              "plan": "Max",
+              "capturedAt": "2026-10-10T14:37:00-07:00",
+              "fiveHour": { "usedPercent": 42, "resetsAt": "2026-10-10T16:58:00-07:00", "extra": 1 },
+              "sevenDay": { "used_percent": 61, "resetsAt": "2026-10-13T07:00:00-07:00" },
+              "sevenDayFable": { "usedPercent": "lots", "resetsAt": "2026-10-13T07:00:00-07:00" }
+            },
+            "codex": {
+              "capturedAt": "2026-10-10T14:40:00-07:00",
+              "windows": [
+                { "usedPercent": 13, "windowMinutes": 10080, "resetsAt": "2026-10-15T13:16:00-07:00" },
+                { "usedPercent": 50 }
+              ]
+            }
+          }
+        }
+        """
+        let fixture = try Fixture.decode(Data(json.utf8))
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        #expect(snapshot.claude.meters.map(\.percentText) == ["42%", "—", "—"])
+        #expect(snapshot.codex.meters.map(\.percentText) == ["13%"])
+        #expect(snapshot.codex.plan == nil)
+        #expect(snapshot.menuBar.text == "✳ 42% · ⌘ 13%")
+    }
+
+    @Test("a service whose block is malformed shows dashes; the other still shows")
+    func malformedService() throws {
+        let json = """
+        {
+          "now": "2026-10-10T14:40:00-07:00",
+          "readings": {
+            "claude": { "plan": "Max" },
+            "codex": {
+              "plan": "pro",
+              "capturedAt": "2026-10-10T14:40:00-07:00",
+              "windows": [{ "usedPercent": 13, "windowMinutes": 10080, "resetsAt": "2026-10-15T13:16:00-07:00" }]
+            }
+          }
+        }
+        """
+        let fixture = try Fixture.decode(Data(json.utf8))
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: losAngeles)
+        #expect(snapshot.menuBar.text == "✳ — · ⌘ 13%")
+    }
+
+    @Test("the bundled sample, rebased to launch time, reads as it did when recorded")
+    func rebasedSample() throws {
+        let fixture = try loadFixture("sample")
+        let launch = date("2026-11-20T09:00:00-08:00")
+        let snapshot = UsageEngine.snapshot(from: fixture.readings(rebasedTo: launch), now: launch, timeZone: losAngeles)
+        #expect(snapshot.menuBar.text == "✳ 61% · ⌘ 13%")
+        #expect(snapshot.claude.updatedText == "Updated 3 min ago")
+        #expect(snapshot.claude.meters[0].resetText == "Resets in 2h 18m (11:18 AM)")
+        #expect(snapshot.codex.meters[0].resetText == "Resets Wed 7:36 AM")
+    }
+}
