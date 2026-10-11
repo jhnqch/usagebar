@@ -43,6 +43,8 @@ public struct ServiceSection: Equatable, Sendable {
     public var meters: [Meter]
     /// A line under the meters, e.g. "No 5-hour limit on your plan".
     public var note: String?
+    /// The weekly cost chart; nil where usage isn't tracked.
+    public var chart: CostChart? = nil
 }
 
 /// One limit window's meter.
@@ -59,4 +61,75 @@ public struct Meter: Equatable, Sendable, Identifiable {
     /// What the window has used so far at API prices, e.g.
     /// "$4.12 · 1.9M tokens this session"; nil where it isn't tracked.
     public var usageText: String? = nil
+}
+
+/// One bar per local calendar day of the weekly window, stacked by model in
+/// API-equivalent dollars.
+public struct CostChart: Equatable, Sendable {
+    /// "This week", or "Last 7 days" without a weekly reading.
+    public var title: String
+    /// "Tue 7 AM to Tue 7 AM · 2d 16h left", or why there's no window.
+    public var rangeText: String
+    /// The window's dollars and tokens: "$412 · 756M tokens".
+    public var totalText: String
+    public var days: [Day]
+    /// One row per model with usage in the window, in stacking order; models
+    /// with no price last.
+    public var legend: [LegendRow]
+
+    /// The tallest bar's dollars, which the bars scale to.
+    public var maxDollars: Double { days.map(\.dollars).max() ?? 0 }
+
+    public struct Day: Equatable, Sendable, Identifiable {
+        /// When the day's part of the window starts.
+        public var id: Date
+        /// "Tue", or "Today".
+        public var label: String
+        public var isToday: Bool
+        /// A day still to come, drawn as an empty slot.
+        public var isFuture: Bool
+        /// Bottom to top, in legend order; only models with a price.
+        public var segments: [Segment]
+        public var dollars: Double
+        /// "Wed Oct 7 · $3.50 · 100K tokens", or "Mon Oct 12 · to come".
+        public var detailText: String
+    }
+
+    public struct Segment: Equatable, Sendable {
+        public var model: String
+        /// The model's colour slot.
+        public var series: Int
+        public var dollars: Double
+
+        public init(model: String, series: Int, dollars: Double) {
+            self.model = model
+            self.series = series
+            self.dollars = dollars
+        }
+    }
+
+    public struct LegendRow: Equatable, Sendable, Identifiable {
+        public var id: String { model }
+        public var model: String
+        /// "Opus 5.5", or the logged id for a model with no price.
+        public var name: String
+        /// "$312 · 640M tokens", or "no price · 12M tokens".
+        public var valueText: String
+        /// The model's colour slot; nil for a model with no price, which
+        /// has no bar.
+        public var series: Int?
+
+        public init(model: String, name: String, valueText: String, series: Int?) {
+            self.model = model
+            self.name = name
+            self.valueText = valueText
+            self.series = series
+        }
+    }
+
+    /// Colour slots: one per model line, in this order, then one per extra
+    /// model (another version of a line, say), then a shared last slot.
+    public static let familySeries = ["opus": 0, "fable": 1, "sonnet": 2, "haiku": 3]
+    public static let extraSeries = 4..<8
+    public static let otherSeries = 8
 }

@@ -49,7 +49,8 @@ public enum UsageEngine {
                     UsageCost.session(readings.claudeUsage, window: fiveHour, now: now, prices: prices),
                     on: "claude.fiveHour"
                 ),
-                note: nil
+                note: nil,
+                chart: UsageCost.weeklyChart(readings.claudeUsage, weekly: weekly, clock: clock, prices: prices)
             ),
             codex: ServiceSection(
                 plan: codex?.plan.map(codexPlanBadge),

@@ -42,12 +42,33 @@ struct Clock {
         let age = now.timeIntervalSince(capturedAt)
         if age < 60 { return "Updated just now" }
         if age < 3600 { return "Updated \(Int(age / 60)) min ago" }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
         if calendar.isDate(capturedAt, inSameDayAs: now) {
             return "Updated at \(format(capturedAt, "h:mm a"))"
         }
         return "Updated \(format(capturedAt, "EEE h:mm a"))"
+    }
+
+    /// "Tue 7 AM", or "Tue 7:30 AM" off the hour.
+    func dayAndHour(_ date: Date) -> String {
+        let minute = calendar.component(.minute, from: date)
+        return format(date, minute == 0 ? "EEE h a" : "EEE h:mm a")
+    }
+
+    /// "Wed Oct 7".
+    func dayAndDate(_ date: Date) -> String {
+        format(date, "EEE MMM d")
+    }
+
+    /// "Wed".
+    func weekday(_ date: Date) -> String {
+        format(date, "EEE")
+    }
+
+    /// A Gregorian calendar in this time zone.
+    var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar
     }
 
     private func format(_ date: Date, _ pattern: String) -> String {
