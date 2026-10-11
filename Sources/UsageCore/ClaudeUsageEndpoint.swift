@@ -8,6 +8,39 @@ import Foundation
 /// access token. Pure: the app's adapter makes the request and passes the
 /// response in.
 public enum ClaudeUsageEndpoint {
+    public static let url = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+
+    /// The Keychain item (generic password, by service) holding Claude
+    /// Code's saved login.
+    public static let keychainService = "Claude Code-credentials"
+
+    /// The access token in Claude Code's saved login: the Keychain secret is
+    /// JSON, and only `claudeAiOauth.accessToken` is used. The refresh token
+    /// is never touched: refreshing belongs to Claude Code.
+    public static func accessToken(fromSecret secret: Data) -> String? {
+        struct Secret: Decodable {
+            struct OAuth: Decodable { var accessToken: String }
+            var claudeAiOauth: OAuth
+        }
+        guard let token = (try? JSONDecoder().decode(Secret.self, from: secret))?.claudeAiOauth.accessToken,
+              !token.isEmpty
+        else { return nil }
+        return token
+    }
+
+    /// The request for `accessToken`. The token goes in this header and
+    /// nowhere else; nothing is cached or stored.
+    public static func request(accessToken: String, userAgent: String) -> URLRequest {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
+        request.httpMethod = "GET"
+        request.httpShouldHandleCookies = false
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        return request
+    }
+
     /// Claude's limits in a response body received at `capturedAt`; nil
     /// when no window in it can be read (an error body, a changed format).
     /// A window that can't be read is nil, so only its meter shows "—".

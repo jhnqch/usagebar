@@ -118,4 +118,46 @@ struct ClaudeUsageEndpointTests {
         #expect(section.claude.updatedText == "Updated 39 min ago")
         #expect(section.menuBar.claude.text == "19%")
     }
+
+    // MARK: - The request
+
+    /// A made-up Keychain secret in Claude Code's shape.
+    let secret = Data("""
+    {"claudeAiOauth":{"accessToken":"fake-access","refreshToken":"fake-refresh","expiresAt":1791700000000,"scopes":["user:inference"],"subscriptionType":"max"}}
+
+    """.utf8)
+
+    @Test("the access token is claudeAiOauth.accessToken in the Keychain secret, and nothing else")
+    func accessToken() {
+        #expect(ClaudeUsageEndpoint.accessToken(fromSecret: secret) == "fake-access")
+    }
+
+    @Test(
+        "a secret without a usable access token gives none",
+        arguments: [
+            "",
+            "not json",
+            #"{"claudeAiOauth":{"refreshToken":"fake-refresh"}}"#,
+            #"{"claudeAiOauth":{"accessToken":""}}"#,
+            #"{"claudeAiOauth":{"accessToken":42}}"#,
+            #"{"accessToken":"fake-access"}"#,
+        ]
+    )
+    func noAccessToken(secret: String) {
+        #expect(ClaudeUsageEndpoint.accessToken(fromSecret: Data(secret.utf8)) == nil)
+    }
+
+    @Test("the request is a GET to api.anthropic.com with the token, the beta header, and no caching")
+    func request() throws {
+        let request = ClaudeUsageEndpoint.request(accessToken: "fake-access", userAgent: "UsageBar/0.1.0")
+        #expect(request.url?.absoluteString == "https://api.anthropic.com/api/oauth/usage")
+        #expect(request.httpMethod == "GET")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fake-access")
+        #expect(request.value(forHTTPHeaderField: "anthropic-beta") == "oauth-2025-04-20")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+        #expect(request.value(forHTTPHeaderField: "User-Agent") == "UsageBar/0.1.0")
+        #expect(request.cachePolicy == .reloadIgnoringLocalAndRemoteCacheData)
+        #expect(request.httpShouldHandleCookies == false)
+        #expect(request.httpBody == nil)
+    }
 }
