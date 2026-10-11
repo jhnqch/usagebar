@@ -8,6 +8,7 @@ import UsageCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model: AppModel
     private let codex: CodexMonitor
+    private let claudeStatusLine: ClaudeStatusLineMonitor
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "menu-bar")
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     init(model: AppModel) {
         self.model = model
         codex = CodexMonitor(model: model)
+        claudeStatusLine = ClaudeStatusLineMonitor(model: model)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onChange = { [weak self] snapshot in self?.show(snapshot.menuBar) }
         model.refresh()
         model.startTicking()
+        claudeStatusLine.start()
         codex.start()
 
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -46,10 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // No orphaned app-server after quitting.
         codex.stop()
+        claudeStatusLine.stop()
     }
 
     private func refresh(force: Bool) {
         model.refresh()
+        claudeStatusLine.refresh()
         codex.refresh(force: force)
     }
 
