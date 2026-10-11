@@ -6,7 +6,8 @@ public enum UsageEngine {
         from readings: Readings,
         now: Date,
         timeZone: TimeZone,
-        prices: PriceTable = .claude
+        claudePrices: PriceTable = .claude,
+        codexPrices: PriceTable = .codex
     ) -> UsageSnapshot {
         let clock = Clock(now: now, timeZone: timeZone)
 
@@ -32,6 +33,9 @@ public enum UsageEngine {
                 ).current(at: now)
             }
         let codexHasFiveHour = codexWindows.contains { $0.id == "codex.300m" }
+        // Windows are known by their length: on some plans the weekly one
+        // comes in the primary slot.
+        let codexWeekly = codex?.windows.first { $0.windowMinutes == weekMinutes }?.reading
         if codexWindows.isEmpty {
             codexWindows = [Window(id: "codex.10080m", label: "Weekly", reading: nil)]
         }
@@ -46,18 +50,19 @@ public enum UsageEngine {
                 plan: readings.claudePlan.map(planBadge),
                 updatedText: [statusLine?.capturedAt, claude?.capturedAt].compactMap(\.self).max().map { clock.updatedText($0) },
                 meters: claudeWindows.map { meter($0, clock: clock) }.withUsage(
-                    UsageCost.session(readings.claudeUsage, window: fiveHour, now: now, prices: prices),
+                    UsageCost.session(readings.claudeUsage, window: fiveHour, now: now, prices: claudePrices),
                     on: "claude.fiveHour"
                 ),
                 note: nil,
-                chart: UsageCost.weeklyChart(readings.claudeUsage, weekly: weekly, clock: clock, prices: prices)
+                chart: UsageCost.weeklyChart(readings.claudeUsage, weekly: weekly, clock: clock, prices: claudePrices)
             ),
             codex: ServiceSection(
                 plan: codex?.plan.map(codexPlanBadge),
                 updatedText: codex?.capturedAt.map { clock.updatedText($0) },
                 meters: codexWindows.map { meter($0, clock: clock) },
                 note: codex == nil || codexHasFiveHour || codex?.windows.isEmpty == true
-                    ? nil : "No 5-hour limit on your plan"
+                    ? nil : "No 5-hour limit on your plan",
+                chart: UsageCost.weeklyChart(readings.codexUsage, weekly: codexWeekly, clock: clock, prices: codexPrices)
             )
         )
     }
@@ -67,6 +72,9 @@ public enum UsageEngine {
     /// status line says 07:00:00), and a new 5-hour or weekly window resets
     /// hours or days after the one before.
     static let sameWindowTolerance: TimeInterval = 15 * 60
+
+    /// A weekly window's length, as Codex reports it.
+    private static let weekMinutes = 7 * 24 * 60
 
     /// One Claude window from the status line and the usage endpoint. Capture
     /// times can't decide it: an idle Claude Code session re-sends its last
@@ -116,7 +124,7 @@ public enum UsageEngine {
     private static func label(forWindowMinutes minutes: Int) -> String {
         switch minutes {
         case 300: "5-hour session"
-        case 10080: "Weekly"
+        case weekMinutes: "Weekly"
         case let m where m % 1440 == 0: "\(m / 1440)-day"
         case let m where m % 60 == 0: "\(m / 60)-hour"
         case let m: "\(m)-minute"

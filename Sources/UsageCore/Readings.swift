@@ -21,6 +21,9 @@ public struct Readings: Decodable, Equatable, Sendable {
     /// Claude Code's replies from its transcripts, one per message,
     /// de-duplicated: the cost chart and the session's cost.
     public var claudeUsage: [UsageEntry]
+    /// Codex's responses from its rollout files, one per response: the
+    /// Codex cost chart.
+    public var codexUsage: [UsageEntry]
 
     public init(
         claudePlan: String? = nil,
@@ -28,7 +31,8 @@ public struct Readings: Decodable, Equatable, Sendable {
         claudeStatusLine: ClaudeLimits? = nil,
         codex: CodexLimits? = nil,
         codexSessionLog: CodexLimits? = nil,
-        claudeUsage: [UsageEntry] = []
+        claudeUsage: [UsageEntry] = [],
+        codexUsage: [UsageEntry] = []
     ) {
         self.claudePlan = claudePlan
         self.claude = claude
@@ -36,6 +40,7 @@ public struct Readings: Decodable, Equatable, Sendable {
         self.codex = codex
         self.codexSessionLog = codexSessionLog
         self.claudeUsage = claudeUsage
+        self.codexUsage = codexUsage
     }
 }
 
@@ -113,7 +118,8 @@ extension Readings {
             claudeStatusLine: claudeStatusLine?.shifted(by: offset),
             codex: codex?.shifted(by: offset),
             codexSessionLog: codexSessionLog?.shifted(by: offset),
-            claudeUsage: claudeUsage.map { $0.shifted(by: offset) }
+            claudeUsage: claudeUsage.map { $0.shifted(by: offset) },
+            codexUsage: codexUsage.map { $0.shifted(by: offset) }
         )
     }
 }
@@ -168,6 +174,9 @@ extension Readings {
         /// Recorded Claude Code transcript lines, read and de-duplicated
         /// into `claudeUsage`.
         case claudeTranscriptLines
+        /// Recorded Codex rollout files, one array of lines per file, each
+        /// read in order into `codexUsage`.
+        case codexRolloutFiles
     }
 
     /// Recorded app-server messages and the time they arrived.
@@ -207,6 +216,13 @@ extension Readings {
         ledger.add(((try? c.decodeIfPresent([Lenient<ClaudeTranscript.Line>].self, forKey: .claudeTranscriptLines)) ?? [])
             .compactMap { $0.value?.entry })
         claudeUsage = ledger.entries
+        var codexLedger = UsageLedger()
+        let rolloutFiles = (try? c.decodeIfPresent([Lenient<[Lenient<CodexRollout.Line>]>].self, forKey: .codexRolloutFiles)) ?? []
+        for (index, file) in rolloutFiles.compactMap(\.value).enumerated() {
+            var parser = CodexRollout.Parser(path: "rollout-\(index).jsonl")
+            codexLedger.add(file.compactMap { $0.value.flatMap { parser.receive($0) } })
+        }
+        codexUsage = codexLedger.entries
     }
 }
 

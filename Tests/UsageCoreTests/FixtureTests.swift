@@ -177,4 +177,28 @@ struct FixtureTests {
         #expect(chart.totalText == "$416 · 1.2B tokens")
         #expect(snapshot.claude.meters[0].usageText == "$42 · 100M tokens this session")
     }
+
+    @Test("a fixture can carry recorded Codex rollout files, read file by file and priced as the app reads them")
+    func recordedRolloutFixture() throws {
+        // Three days into Codex's Thu 1:16 PM window: GPT-6-Astra sessions
+        // (one response before the window opens), a switch to GPT-6.1-Sol,
+        // a `codex review` pair whose parent logs no usage, a GPT-6-Luna
+        // subagent and "codex-auto-review", which has no public price.
+        // Dollars worked out separately from OpenAI's pricing page.
+        let fixture = try loadFixture("codex-cost")
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        let chart = try #require(snapshot.codex.chart)
+        #expect(chart.rangeText == "Thu 1:16 PM to Thu 1:16 PM · 4d 22h left")
+        #expect(chart.days.map(\.label) == ["Thu", "Fri", "Today", "Sun", "Mon", "Tue", "Wed", "Thu"])
+        #expect(chart.days.map { ($0.dollars * 1000).rounded() / 1000 } == [3.774, 8.098, 3.661, 0, 0, 0, 0, 0])
+        #expect(chart.legend.map(\.name) == ["GPT-6-Astra", "GPT-6.1-Sol", "GPT-6-Luna", "codex-auto-review"])
+        #expect(chart.legend.map(\.valueText) == [
+            "$15 · 5.5M tokens", "$0.79 · 1.5M tokens", "$0.03 · 732K tokens", "no price · 182K tokens",
+        ])
+        #expect(chart.totalText == "$16 · 7.9M tokens")
+        // Rebased for the app, the usage moves with the window.
+        let later = fixture.now + 3 * 24 * 60 * 60
+        let rebased = UsageEngine.snapshot(from: fixture.readings(rebasedTo: later), now: later, timeZone: fixture.timeZone)
+        #expect(rebased.codex.chart?.legend == chart.legend)
+    }
 }

@@ -124,3 +124,145 @@ public struct UsageLedger: Equatable, Sendable {
 
     public var count: Int { byID.count }
 }
+
+/// Reads one kind of usage log, a file at a time, for `UsageLogScan`. A
+/// parser is made for each file and sees its complete lines in order, so it
+/// can carry what earlier lines said (a Codex turn's model, say) to later
+/// ones.
+public protocol UsageLogParser: Equatable, Sendable {
+    /// A parser for the file at `path`, before its first line.
+    init(path: String)
+    /// The usage in the file's next complete lines.
+    mutating func entries(in lines: Data) -> [UsageEntry]
+}
+
+/// An incremental scan of usage logs. Claude Code and Codex only append to
+/// them, so each file keeps a cursor: the end of its last complete line read,
+/// and its parser as of that line. A rescan reads only the bytes after it.
+/// The adapter lists the files, asks `reads(for:since:)` what to read, and
+/// hands each read's bytes to `receive(_:for:)`.
+public struct UsageLogScan<Parser: UsageLogParser>: Equatable, Sendable {
+    /// A log file as listed.
+    public struct File: Equatable, Sendable {
+        public var path: String
+        public var size: Int
+        public var modified: Date
+        /// The file's identity (its inode): a new file under the same name
+        /// is read from the start.
+        public var identity: UInt64
+
+        public init(path: String, size: Int, modified: Date, identity: UInt64) {
+            self.path = path
+            self.size = size
+            self.modified = modified
+            self.identity = identity
+        }
+    }
+
+    /// Bytes to read from a file.
+    public struct Read: Equatable, Sendable {
+        public var path: String
+        public var offset: Int
+        public var length: Int
+
+        public init(path: String, offset: Int, length: Int) {
+            self.path = path
+            self.offset = offset
+            self.length = length
+        }
+    }
+
+    private struct Cursor: Equatable, Sendable {
+        var identity: UInt64
+        var offset: Int
+        var parser: Parser
+    }
+
+    private var cursors: [String: Cursor] = [:]
+    private var ledger = UsageLedger()
+    private var since = Date.distantPast
+
+    public init() {}
+
+    /// What to read now, given the log files that exist and the earliest
+    /// time still wanted. A file last changed before `since` holds nothing
+    /// newer, so it isn't read; usage before it is forgotten.
+    public mutating func reads(for files: [File], since: Date) -> [Read] {
+        self.since = since
+        ledger.removeEntries(before: since)
+        let listed = Set(files.map(\.path))
+        cursors = cursors.filter { listed.contains($0.key) }
+        var reads: [Read] = []
+        for file in files {
+            if let cursor = cursors[file.path], cursor.identity == file.identity, cursor.offset <= file.size {
+                if cursor.offset < file.size {
+                    reads.append(Read(path: file.path, offset: cursor.offset, length: file.size - cursor.offset))
+                }
+                continue
+            }
+            // New, replaced or shrunk: from the start, with a fresh parser.
+            // Usage already counted is merged by id, not counted twice.
+            guard file.modified >= since || cursors[file.path] != nil else { continue }
+            cursors[file.path] = Cursor(identity: file.identity, offset: 0, parser: Parser(path: file.path))
+            if file.size > 0 {
+                reads.append(Read(path: file.path, offset: 0, length: file.size))
+            }
+        }
+        return reads
+    }
+
+    /// The bytes read for `read`. Takes every complete line; a last line
+    /// still being written is read again next time.
+    public mutating func receive(_ bytes: Data, for read: Read) {
+        guard var cursor = cursors[read.path], cursor.offset == read.offset,
+              let lastNewline = bytes.lastIndex(of: UInt8(ascii: "\n"))
+        else { return }
+        let complete = bytes[bytes.startIndex...lastNewline]
+        ledger.add(cursor.parser.entries(in: Data(complete)).filter { $0.timestamp >= since })
+        cursor.offset += complete.count
+        cursors[read.path] = cursor
+    }
+
+    /// Every usage entry read so far since `since`, oldest first.
+    public var entries: [UsageEntry] { ledger.entries }
+}
+
+/// The incremental scan of Claude Code's transcripts.
+public typealias TranscriptScan = UsageLogScan<ClaudeTranscript.Parser>
+
+/// The incremental scan of Codex's rollout files.
+public typealias RolloutScan = UsageLogScan<CodexRollout.Parser>
+
+/// JSON-lines logs: one JSON object per line.
+enum JSONLines {
+    /// Calls `body` with each line (without its newline) that contains any
+    /// of `keys`. The byte check runs before any decoding, so lines that
+    /// can't matter, often the biggest, are never decoded.
+    static func forEach(in log: Data, containingAny keys: [Data], _ body: (Data) -> Void) {
+        log.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.baseAddress else { return }
+            var start = 0
+            while start < raw.count {
+                let line = base + start
+                var end = raw.count
+                if let newline = memchr(line, 0x0A, raw.count - start) {
+                    end = start + (UnsafeRawPointer(newline) - line)
+                }
+                let length = end - start
+                if length > 0, keys.contains(where: { key in
+                    key.withUnsafeBytes { memmem(line, length, $0.baseAddress, $0.count) != nil }
+                }) {
+                    body(Data(bytes: line, count: length))
+                }
+                start = end + 1
+            }
+        }
+    }
+
+    /// Log timestamps, with or without fractional seconds:
+    /// "2026-10-09T22:20:44.544Z".
+    static func date(_ text: String) -> Date? {
+        (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+            ?? (try? Date(text, strategy: .iso8601))
+    }
+}

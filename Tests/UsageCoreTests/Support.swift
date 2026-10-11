@@ -51,10 +51,12 @@ func snapshot(
     codex: CodexLimits? = nil,
     codexSessionLog: CodexLimits? = nil,
     claudeUsage: [UsageEntry] = [],
+    codexUsage: [UsageEntry] = [],
     at time: Date = now
 ) -> UsageSnapshot {
     UsageEngine.snapshot(
-        from: Readings(claude: claude, claudeStatusLine: claudeStatusLine, codex: codex, codexSessionLog: codexSessionLog, claudeUsage: claudeUsage),
+        from: Readings(claude: claude, claudeStatusLine: claudeStatusLine, codex: codex, codexSessionLog: codexSessionLog,
+                       claudeUsage: claudeUsage, codexUsage: codexUsage),
         now: time,
         timeZone: losAngeles
     )
@@ -184,6 +186,96 @@ func claudeUsage(_ lines: [Data]) -> [UsageEntry] {
     var ledger = UsageLedger()
     for line in lines {
         ledger.add(ClaudeTranscript.entries(in: line + Data("\n".utf8)))
+    }
+    return ledger.entries
+}
+
+/// Token counts in Codex's shape. Cached input and cache writes are part of
+/// `input`; reasoning is part of `output`.
+func codexTokens(input: Int = 0, cached: Int = 0, write: Int = 0, output: Int = 0, reasoning: Int = 0) -> [String: Int] {
+    [
+        "input_tokens": input,
+        "cached_input_tokens": cached,
+        "cache_write_input_tokens": write,
+        "output_tokens": output,
+        "reasoning_output_tokens": reasoning,
+        "total_tokens": input + output,
+    ]
+}
+
+/// Codex rollout lines as Codex writes them, with the fields UsageBar reads
+/// (and a few it doesn't).
+enum Rollout {
+    static func sessionMeta(id: String, at time: String) -> Data {
+        json([
+            "timestamp": time, "type": "session_meta",
+            "payload": ["id": id, "session_id": id, "timestamp": time, "source": "vscode",
+                        "cli_version": "0.162.0-alpha.17.2", "model_provider": "openai"],
+        ])
+    }
+
+    static func turnContext(model: String, at time: String) -> Data {
+        json([
+            "timestamp": time, "type": "turn_context",
+            "payload": ["turn_id": UUID().uuidString.lowercased(), "model": model, "effort": "medium",
+                        "service_tier": NSNull(), "timezone": "America/Los_Angeles"],
+        ])
+    }
+
+    /// A `token_count` event: the session's running total and the last
+    /// response's usage. With neither, `info` is null, as Codex writes it
+    /// before the first response.
+    static func tokenCount(at time: String, total: [String: Any]?, last: [String: Any]?) -> Data {
+        var info: Any = NSNull()
+        if total != nil || last != nil {
+            var fields: [String: Any] = ["model_context_window": 258_400]
+            if let total { fields["total_token_usage"] = total }
+            if let last { fields["last_token_usage"] = last }
+            info = fields
+        }
+        return json([
+            "timestamp": time, "type": "event_msg",
+            "payload": ["type": "token_count", "info": info, "rate_limits": NSNull()],
+        ])
+    }
+
+    /// One step of a session: a new turn on a model, or one model response.
+    enum Step {
+        case turn(model: String, at: String)
+        case response(at: String, [String: Int])
+    }
+
+    /// A whole rollout file: its `session_meta` line, then each step, with
+    /// the running totals Codex keeps.
+    static func session(id: String = "thread-1", _ steps: [Step]) -> [Data] {
+        var total = codexTokens()
+        var lines: [Data] = []
+        for step in steps {
+            switch step {
+            case let .turn(model, time):
+                if lines.isEmpty { lines.append(sessionMeta(id: id, at: time)) }
+                lines.append(turnContext(model: model, at: time))
+            case let .response(time, tokens):
+                if lines.isEmpty { lines.append(sessionMeta(id: id, at: time)) }
+                total.merge(tokens, uniquingKeysWith: +)
+                lines.append(tokenCount(at: time, total: total, last: tokens))
+            }
+        }
+        return lines
+    }
+
+    private static func json(_ object: [String: Any]) -> Data {
+        try! JSONSerialization.data(withJSONObject: object)
+    }
+}
+
+/// Codex's usage in rollout files (one array of lines per file), each file
+/// read in order as the app does.
+func codexUsage(_ files: [[Data]]) -> [UsageEntry] {
+    var ledger = UsageLedger()
+    for (index, lines) in files.enumerated() {
+        var parser = CodexRollout.Parser(path: "/sessions/rollout-\(index).jsonl")
+        ledger.add(parser.entries(in: lines.reduce(Data()) { $0 + $1 + Data("\n".utf8) }))
     }
     return ledger.entries
 }

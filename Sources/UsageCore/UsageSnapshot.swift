@@ -153,7 +153,12 @@ public struct CostChart: Equatable, Sendable {
 
     /// Colour slots: one per model line, in this order, then one per extra
     /// model (another version of a line, say), then a shared last slot.
-    public static let familySeries = ["opus": 0, "fable": 1, "sonnet": 2, "haiku": 3]
+    /// Codex's lines share the slots by rank: Astra like Opus, Sol like
+    /// Sonnet, Luna like Haiku.
+    public static let familySeries = [
+        "opus": 0, "fable": 1, "sonnet": 2, "haiku": 3,
+        "astra": 0, "terra": 1, "sol": 2, "luna": 3,
+    ]
     public static let extraSeries = 4..<8
     public static let otherSeries = 8
 }
