@@ -19,7 +19,7 @@ public enum UsageEngine {
                 Window(
                     id: "codex.\($0.windowMinutes)m",
                     label: label(forWindowMinutes: $0.windowMinutes),
-                    reading: LimitReading(usedPercent: $0.usedPercent, resetsAt: $0.resetsAt)
+                    reading: $0.reading
                 ).current(at: now)
             }
         let codexHasFiveHour = codexWindows.contains { $0.id == "codex.300m" }

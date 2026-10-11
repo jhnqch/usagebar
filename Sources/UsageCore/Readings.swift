@@ -2,7 +2,7 @@ import Foundation
 
 /// The latest raw readings from every source. The engine turns these, plus a
 /// clock, into a `UsageSnapshot`. A missing reading means "no data".
-public struct Readings: Codable, Equatable, Sendable {
+public struct Readings: Decodable, Equatable, Sendable {
     public var claude: ClaudeLimits?
     public var codex: CodexLimits?
 
@@ -13,7 +13,7 @@ public struct Readings: Codable, Equatable, Sendable {
 }
 
 /// One limit window as a source reports it.
-public struct LimitReading: Codable, Equatable, Sendable {
+public struct LimitReading: Decodable, Equatable, Sendable {
     /// Percent of the window used, 0–100.
     public var usedPercent: Double
     public var resetsAt: Date
@@ -25,7 +25,7 @@ public struct LimitReading: Codable, Equatable, Sendable {
 }
 
 /// Claude's limit windows: 5-hour session, weekly (all models), weekly Fable.
-public struct ClaudeLimits: Codable, Equatable, Sendable {
+public struct ClaudeLimits: Decodable, Equatable, Sendable {
     /// Plan name, e.g. "Max".
     public var plan: String?
     public var capturedAt: Date
@@ -49,7 +49,7 @@ public struct ClaudeLimits: Codable, Equatable, Sendable {
 }
 
 /// Codex's limit windows: zero or more, each with its own length.
-public struct CodexLimits: Codable, Equatable, Sendable {
+public struct CodexLimits: Decodable, Equatable, Sendable {
     /// Plan type as Codex reports it, e.g. "pro".
     public var plan: String?
     public var capturedAt: Date
@@ -62,15 +62,19 @@ public struct CodexLimits: Codable, Equatable, Sendable {
     }
 }
 
-public struct CodexWindow: Codable, Equatable, Sendable {
-    public var usedPercent: Double
+/// One Codex window, identified by its length. `reading` is nil when the
+/// window is reported but its numbers can't be read.
+public struct CodexWindow: Equatable, Sendable {
     public var windowMinutes: Int
-    public var resetsAt: Date
+    public var reading: LimitReading?
+
+    public init(windowMinutes: Int, reading: LimitReading?) {
+        self.windowMinutes = windowMinutes
+        self.reading = reading
+    }
 
     public init(usedPercent: Double, windowMinutes: Int, resetsAt: Date) {
-        self.usedPercent = usedPercent
-        self.windowMinutes = windowMinutes
-        self.resetsAt = resetsAt
+        self.init(windowMinutes: windowMinutes, reading: LimitReading(usedPercent: usedPercent, resetsAt: resetsAt))
     }
 }
 
@@ -106,7 +110,7 @@ extension CodexLimits {
             plan: plan,
             capturedAt: capturedAt + offset,
             windows: windows.map {
-                CodexWindow(usedPercent: $0.usedPercent, windowMinutes: $0.windowMinutes, resetsAt: $0.resetsAt + offset)
+                CodexWindow(windowMinutes: $0.windowMinutes, reading: $0.reading?.shifted(by: offset))
             }
         )
     }
@@ -119,6 +123,10 @@ extension CodexLimits {
 // "—"); it never fails the whole readings file.
 
 extension Readings {
+    private enum CodingKeys: String, CodingKey {
+        case claude, codex
+    }
+
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         claude = try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claude)
@@ -127,6 +135,10 @@ extension Readings {
 }
 
 extension ClaudeLimits {
+    private enum CodingKeys: String, CodingKey {
+        case plan, capturedAt, fiveHour, sevenDay, sevenDayFable
+    }
+
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         plan = try? c.decodeIfPresent(String.self, forKey: .plan)
@@ -138,12 +150,36 @@ extension ClaudeLimits {
 }
 
 extension CodexLimits {
+    private enum CodingKeys: String, CodingKey {
+        case plan, capturedAt, windows
+    }
+
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         plan = try? c.decodeIfPresent(String.self, forKey: .plan)
         capturedAt = try c.decode(Date.self, forKey: .capturedAt)
         windows = ((try? c.decodeIfPresent([Lenient<CodexWindow>].self, forKey: .windows)) ?? [])
             .compactMap(\.value)
+    }
+}
+
+extension CodexWindow: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case windowMinutes, usedPercent, resetsAt
+    }
+
+    /// A window whose length is readable keeps its place (so a 5-hour window
+    /// with bad numbers shows "—" rather than vanishing); one whose length
+    /// isn't readable can't be identified and is dropped.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        windowMinutes = try c.decode(Int.self, forKey: .windowMinutes)
+        if let used = try? c.decode(Double.self, forKey: .usedPercent),
+           let resetsAt = try? c.decode(Date.self, forKey: .resetsAt) {
+            reading = LimitReading(usedPercent: used, resetsAt: resetsAt)
+        } else {
+            reading = nil
+        }
     }
 }
 

@@ -57,6 +57,30 @@ struct FixtureTests {
         #expect(snapshot.menuBar.text == "✳ — · ⌘ 13%")
     }
 
+    @Test("a malformed Codex 5-hour window shows a dash, not 'no 5-hour limit'")
+    func malformedCodexFiveHour() throws {
+        let json = """
+        {
+          "now": "2026-10-10T14:40:00-07:00",
+          "readings": {
+            "codex": {
+              "plan": "pro",
+              "capturedAt": "2026-10-10T14:40:00-07:00",
+              "windows": [
+                { "usedPercent": 13, "windowMinutes": 10080, "resetsAt": "2026-10-15T13:16:00-07:00" },
+                { "used_percent": 27, "windowMinutes": 300, "resetsAt": "2026-10-10T17:10:00-07:00" }
+              ]
+            }
+          }
+        }
+        """
+        let fixture = try Fixture.decode(Data(json.utf8))
+        let codex = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: losAngeles).codex
+        #expect(codex.meters.map(\.label) == ["5-hour session", "Weekly"])
+        #expect(codex.meters.map(\.percentText) == ["—", "13%"])
+        #expect(codex.note == nil)
+    }
+
     @Test("the bundled sample, rebased to launch time, reads as it did when recorded")
     func rebasedSample() throws {
         let fixture = try loadFixture("sample")
