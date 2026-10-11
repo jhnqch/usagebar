@@ -145,6 +145,20 @@ struct CodexRolloutTests {
         #expect(never.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 2))
     }
 
+    @Test("a running total that loses a count for good counts each response once, and nothing for a count sent again")
+    func countGoneForGood() throws {
+        let last = codexTokens(input: 1_000, cached: 800)
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-1", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 1_000, cached: 800), last: last),
+            Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00", total: ["input_tokens": 2_000, "output_tokens": 0], last: last),
+            Rollout.tokenCount(at: "2026-10-09T10:00:10-07:00", total: ["input_tokens": 2_000, "output_tokens": 0], last: last),
+            Rollout.tokenCount(at: "2026-10-09T10:00:14-07:00", total: ["input_tokens": 3_000, "output_tokens": 0], last: last),
+        ]])
+        #expect(entries.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 3))
+    }
+
     @Test("a running total with one count gone down has started over, even when the sum went up")
     func oneCountDown() throws {
         let entries = codexUsage([[

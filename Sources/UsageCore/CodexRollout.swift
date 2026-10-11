@@ -26,8 +26,8 @@ public enum CodexRollout {
     /// first count, which may carry usage from before the file), or a count
     /// in it went down (it started over), the response's own usage counts.
     /// So it does where the running total is missing, unreadable or lacks a
-    /// count the last one had; the response's usage then moves the last
-    /// total on, so the next total doesn't count it again.
+    /// count the last one had; the response's usage then moves the missing
+    /// counts on, so the next total doesn't count it again.
     public struct Parser: UsageLogParser {
         /// Names the file's entries: its thread id once `session_meta` is
         /// read, else its file name. A file read again, or moved (as
@@ -73,7 +73,15 @@ public enum CodexRollout {
                 return nil
             case let .tokenCount(total, last):
                 let usage: Usage?
-                if let total, !total.drops(from: self.total) {
+                if let total, let previous = self.total, total.drops(from: previous) {
+                    // The missing count can't be measured, so the response's
+                    // own usage counts, or nothing if the total hasn't moved
+                    // (the same count sent again). The counts it has become
+                    // the baseline; the missing ones move on by the response.
+                    let moved = total.input != previous.input || total.output != previous.output
+                    usage = moved ? last : nil
+                    self.total = total.filling(from: previous, movedOnBy: usage)
+                } else if let total {
                     if let previous = self.total, total.covers(previous) {
                         usage = total.usage.since(previous.usage)
                     } else {
@@ -180,9 +188,19 @@ public enum CodexRollout {
         /// Whether it lacks a count `earlier` had: then it isn't the same
         /// running total, and a missing count read as zero would make the
         /// next total count everything again.
-        func drops(from earlier: RunningTotal?) -> Bool {
-            guard let earlier else { return false }
-            return (earlier.cached != nil && cached == nil) || (earlier.cacheWrite != nil && cacheWrite == nil)
+        func drops(from earlier: RunningTotal) -> Bool {
+            (earlier.cached != nil && cached == nil) || (earlier.cacheWrite != nil && cacheWrite == nil)
+        }
+
+        /// This total, with each count it lacks taken from `earlier` and
+        /// moved on by `usage`.
+        func filling(from earlier: RunningTotal, movedOnBy usage: Usage?) -> RunningTotal {
+            RunningTotal(
+                input: input,
+                cached: cached ?? earlier.cached.map { $0 + (usage?.cached ?? 0) },
+                cacheWrite: cacheWrite ?? earlier.cacheWrite.map { $0 + (usage?.cacheWrite ?? 0) },
+                output: output
+            )
         }
 
         /// Whether no count has gone down since `earlier`.
