@@ -8,8 +8,8 @@ public enum UsageEngine {
         let claude = readings.claude
         let statusLine = readings.claudeStatusLine
         let claudeWindows = [
-            Window(id: "claude.fiveHour", label: "5-hour session", reading: fresher(statusLine, claude, \.fiveHour)),
-            Window(id: "claude.sevenDay", label: "Weekly · all models", reading: fresher(statusLine, claude, \.sevenDay)),
+            Window(id: "claude.fiveHour", label: "5-hour session", reading: merged(statusLine?.fiveHour, claude?.fiveHour)),
+            Window(id: "claude.sevenDay", label: "Weekly · all models", reading: merged(statusLine?.sevenDay, claude?.sevenDay)),
             // Fable comes only from the usage endpoint.
             Window(id: "claude.sevenDayFable", label: "Weekly · Fable", reading: claude?.sevenDayFable),
         ].map { $0.current(at: now) }
@@ -51,16 +51,23 @@ public enum UsageEngine {
         )
     }
 
-    /// One Claude window from whichever source captured it later; the status
-    /// line on a tie.
-    private static func fresher(
-        _ statusLine: ClaudeLimits?,
-        _ endpoint: ClaudeLimits?,
-        _ window: KeyPath<ClaudeLimits, LimitReading?>
-    ) -> LimitReading? {
-        guard let fromStatusLine = statusLine?[keyPath: window] else { return endpoint?[keyPath: window] }
-        guard let fromEndpoint = endpoint?[keyPath: window] else { return fromStatusLine }
-        return (endpoint?.capturedAt ?? .distantPast) > (statusLine?.capturedAt ?? .distantPast) ? fromEndpoint : fromStatusLine
+    /// Resets this close together belong to the same window. The two
+    /// sources round them differently (the endpoint says 06:59:59.82 where the
+    /// status line says 07:00:00), and a new 5-hour or weekly window resets
+    /// hours or days after the one before.
+    static let sameWindowTolerance: TimeInterval = 15 * 60
+
+    /// One Claude window from the status line and the usage endpoint. Capture
+    /// times can't decide it: an idle Claude Code session re-sends its last
+    /// numbers with a fresh capture time. Within one window use only goes up,
+    /// so the higher percent is the newer one (the status line's on a tie);
+    /// across windows, the one that resets later is the newer window.
+    private static func merged(_ statusLine: LimitReading?, _ endpoint: LimitReading?) -> LimitReading? {
+        guard let statusLine, let endpoint else { return statusLine ?? endpoint }
+        if abs(endpoint.resetsAt.timeIntervalSince(statusLine.resetsAt)) <= sameWindowTolerance {
+            return endpoint.usedPercent > statusLine.usedPercent ? endpoint : statusLine
+        }
+        return endpoint.resetsAt > statusLine.resetsAt ? endpoint : statusLine
     }
 
     /// Whichever Codex reading was taken later; app-server on a tie.
