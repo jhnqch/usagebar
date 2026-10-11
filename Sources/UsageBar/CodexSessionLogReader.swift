@@ -5,11 +5,7 @@ import UsageCore
 /// `~/.codex/sessions` (or `$CODEX_HOME/sessions`). Reads only `.jsonl`
 /// session files, never Codex's login.
 actor CodexSessionLogReader {
-    static let defaultDirectory: URL = {
-        let home = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
-        return home.appending(path: "sessions")
-    }()
+    static let defaultDirectory = UsageLogs.codexHome.appending(path: "sessions")
 
     /// How much of the end of each file to read: the last record is near it.
     private static let tailBytes = 4 * 1024 * 1024

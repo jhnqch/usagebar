@@ -30,7 +30,8 @@ struct Palette {
     }
 
     /// A model's colour in the cost chart, by its slot: Opus, Fable, Sonnet,
-    /// Haiku, then extra models, then a shared grey. The categorical
+    /// Haiku (for Codex: Astra, Terra, Sol, Luna), then extra models, then a
+    /// shared grey. The categorical
     /// palette from the dataviz skill, in its validated order (adjacent
     /// pairs separable under colour-vision deficiency, light and dark,
     /// against this popover's surfaces).

@@ -10,7 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let codex: CodexMonitor
     private let claudeStatusLine: ClaudeStatusLineMonitor
     private let claudeUsage: ClaudeUsageMonitor
-    private let claudeUsageLog: ClaudeUsageLogMonitor
+    private let claudeUsageLog: UsageLogMonitor<ClaudeTranscript.Parser>
+    private let codexUsageLog: UsageLogMonitor<CodexRollout.Parser>
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "menu-bar")
@@ -20,7 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         codex = CodexMonitor(model: model)
         claudeStatusLine = ClaudeStatusLineMonitor(model: model)
         claudeUsage = ClaudeUsageMonitor(model: model)
-        claudeUsageLog = ClaudeUsageLogMonitor(model: model)
+        claudeUsageLog = UsageLogMonitor(
+            model: model, reader: UsageLogReader(directories: UsageLogs.claudeProjects), name: "Claude Code", usage: \.claudeUsage
+        )
+        codexUsageLog = UsageLogMonitor(
+            model: model, reader: UsageLogReader(directories: UsageLogs.codexSessions), name: "Codex", usage: \.codexUsage
+        )
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -41,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         claudeStatusLine.start()
         claudeUsage.start()
         claudeUsageLog.start()
+        codexUsageLog.start()
         codex.start()
 
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -58,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         claudeStatusLine.stop()
         claudeUsage.stop()
         claudeUsageLog.stop()
+        codexUsageLog.stop()
     }
 
     private func refresh(force: Bool) {
@@ -66,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Even Refresh asks the rate-limited usage endpoint at most once a minute.
         claudeUsage.refresh()
         claudeUsageLog.refresh()
+        codexUsageLog.refresh()
         codex.refresh(force: force)
     }
 
