@@ -78,8 +78,13 @@ func fixtureLines(_ path: String) throws -> [Data] {
 /// What a conversation with app-server sent and produced while replaying lines.
 struct Replay {
     var sent: [Data] = []
-    var limits: [CodexLimits] = []
+    var readings: [CodexAppServerConversation.Reading] = []
     var failures: [String] = []
+
+    /// The new readings, in order, leaving out answers with nothing usable.
+    var limits: [CodexLimits] {
+        readings.compactMap { if case let .updated(limits) = $0 { limits } else { nil } }
+    }
 
     /// The `method` of every message sent, or "reply" for responses.
     var sentMethods: [String] {
@@ -97,7 +102,7 @@ func replay(_ lines: [Data], at time: Date) -> Replay {
     for line in lines {
         let step = conversation.receive(line, at: time)
         result.sent += step.send
-        if let limits = step.limits { result.limits.append(limits) }
+        if let reading = step.reading { result.readings.append(reading) }
         if let failure = step.failure { result.failures.append(failure) }
     }
     return result

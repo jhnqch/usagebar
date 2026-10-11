@@ -13,10 +13,24 @@ public struct CodexAppServerConversation: Sendable {
     public struct Step: Equatable, Sendable {
         /// Lines to write to app-server's stdin, in order.
         public var send: [Data] = []
-        /// A new Codex reading, from a read response or a push.
-        public var limits: CodexLimits?
+        /// What app-server just said about Codex's limits, from a read
+        /// response or a push; nil when this step said nothing about them.
+        public var reading: Reading?
         /// An error app-server returned, for the log.
         public var failure: String?
+    }
+
+    /// app-server's latest word on Codex's limits.
+    public enum Reading: Equatable, Sendable {
+        /// A new reading.
+        case updated(CodexLimits)
+        /// app-server answered, but nothing in the answer could be read (a
+        /// changed format, say). The previous reading is no longer current.
+        case unusable
+
+        init(_ limits: CodexLimits?) {
+            self = limits.map(Reading.updated) ?? .unusable
+        }
     }
 
     private let clientVersion: String
@@ -57,7 +71,9 @@ public struct CodexAppServerConversation: Sendable {
         case let (id?, nil):
             return response(id: id, message, at: now)
         case let (nil, method?) where method == "account/rateLimits/updated":
-            return Step(limits: message.pushedRateLimits?.codexLimits(capturedAt: now))
+            // A push for another bucket (a per-model quota, say) isn't about these meters.
+            guard message.pushedRateLimits?.isCodexBucket != false else { return Step() }
+            return Step(reading: Reading(message.pushedRateLimits?.codexLimits(capturedAt: now)))
         default:
             return Step()
         }
@@ -77,7 +93,7 @@ public struct CodexAppServerConversation: Sendable {
         if let error = message.errorMessage {
             return Step(failure: "account/rateLimits/read failed: \(error)")
         }
-        return Step(limits: message.readResult?.codexBucket?.codexLimits(capturedAt: now))
+        return Step(reading: Reading(message.readResult?.codexBucket?.codexLimits(capturedAt: now)))
     }
 
     private mutating func readRequest() -> Data {
@@ -250,6 +266,11 @@ struct AppServerRateLimits: Decodable {
         planType = try? c.decodeIfPresent(String.self, forKey: .planType)
         primary = try? c.decodeIfPresent(RateLimitWindow.AppServer.self, forKey: .primary)?.window
         secondary = try? c.decodeIfPresent(RateLimitWindow.AppServer.self, forKey: .secondary)?.window
+    }
+
+    /// Whether this is the main `codex` bucket that feeds the meters.
+    var isCodexBucket: Bool {
+        limitId == nil || limitId == "codex"
     }
 
     func codexLimits(capturedAt: Date) -> CodexLimits? {

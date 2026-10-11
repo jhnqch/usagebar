@@ -19,8 +19,9 @@ final class CodexAppServerProcess {
         ProcessInfo.processInfo.environment["USAGEBAR_CODEX"]
             ?? "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
 
-    /// Called on the main actor with each new reading.
-    var onLimits: ((CodexLimits) -> Void)?
+    /// Called on the main actor with each new reading, or nil when
+    /// app-server answered with nothing usable.
+    var onReading: ((CodexLimits?) -> Void)?
 
     private let executable: URL
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "codex-app-server")
@@ -149,10 +150,16 @@ final class CodexAppServerProcess {
             if let failure = step.failure {
                 log.error("\(failure, privacy: .public)")
             }
-            if let limits = step.limits {
+            switch step.reading {
+            case let .updated(limits):
                 backoff.reset()
                 log.info("Codex limits from app-server: \(limits.windows.map { "\($0.windowMinutes)m" }, privacy: .public)")
-                onLimits?(limits)
+                onReading?(limits)
+            case .unusable:
+                log.error("app-server's rate limits had nothing UsageBar could read; dropping its reading")
+                onReading?(nil)
+            case nil:
+                break
             }
         }
     }

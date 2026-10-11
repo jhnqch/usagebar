@@ -30,7 +30,7 @@ final class CodexMonitor {
     }
 
     func start() {
-        appServer.onLimits = { [weak model] limits in
+        appServer.onReading = { [weak model] limits in
             model?.update { $0.codex = limits }
         }
         // The handshake reads once by itself.

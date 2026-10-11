@@ -48,7 +48,30 @@ struct CodexAppServerTests {
     func otherBucket() throws {
         let push = String(decoding: try fixtureLines("codex/app-server.jsonl").last!, as: UTF8.self)
             .replacingOccurrences(of: #""limitId":"codex""#, with: #""limitId":"codex_other""#)
-        #expect(replay([Data(push.utf8)], at: received).limits.isEmpty)
+        #expect(replay([Data(push.utf8)], at: received).readings.isEmpty)
+    }
+
+    @Test("a successful read with nothing usable drops the old reading, so the fallback or a dash shows")
+    func unusableReadDropsReading() throws {
+        let lines = try fixtureLines("codex/app-server.jsonl")
+        var conversation = CodexAppServerConversation()
+        _ = conversation.start()
+        _ = conversation.receive(lines[0], at: received)
+        let first = conversation.receive(lines[2], at: received).reading
+        #expect(first.map { if case .updated = $0 { true } else { false } } == true)
+        _ = conversation.requestRateLimits()
+        // The next read answers in a format whose window lengths we can't find.
+        let renamed = String(decoding: lines[2], as: UTF8.self)
+            .replacingOccurrences(of: #"{"id":2,"#, with: #"{"id":3,"#)
+            .replacingOccurrences(of: "windowDurationMins", with: "windowLengthMinutes")
+        #expect(conversation.receive(Data(renamed.utf8), at: received).reading == .unusable)
+    }
+
+    @Test("a Codex push with nothing usable drops the old reading too")
+    func unusablePush() throws {
+        let push = String(decoding: try fixtureLines("codex/app-server.jsonl").last!, as: UTF8.self)
+            .replacingOccurrences(of: "windowDurationMins", with: "windowLengthMinutes")
+        #expect(replay([Data(push.utf8)], at: received).readings == [.unusable])
     }
 
     @Test("it sends only initialize, initialized and reads, and declines a token refresh request")

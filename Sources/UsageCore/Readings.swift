@@ -153,7 +153,11 @@ extension Readings {
             var conversation = CodexAppServerConversation()
             _ = conversation.start()
             return messages.compactMap(\.value).reduce(nil) { latest, message in
-                conversation.receive(message, at: receivedAt).limits ?? latest
+                switch conversation.receive(message, at: receivedAt).reading {
+                case let .updated(limits): limits
+                case .unusable: nil
+                case nil: latest
+                }
             }
         }
     }
