@@ -36,6 +36,12 @@ struct Clock {
             : "Resets \(format(resetsAt, "EEE h:mm a"))"
     }
 
+    /// "4:58 PM" on today's date, "Tue 7:00 AM" on another: a time that
+    /// stays right in a notification read later.
+    func time(_ date: Date) -> String {
+        format(date, calendar.isDate(date, inSameDayAs: now) ? "h:mm a" : "EEE h:mm a")
+    }
+
     /// "Updated just now", "Updated 3 min ago", "Updated at 11:05 AM" (today),
     /// "Updated Thu 9:30 AM" (earlier).
     func updatedText(_ capturedAt: Date) -> String {

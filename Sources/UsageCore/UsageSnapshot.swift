@@ -5,6 +5,11 @@ public struct UsageSnapshot: Equatable, Sendable {
     public var menuBar: MenuBarLabel
     public var claude: ServiceSection
     public var codex: ServiceSection
+    /// Notifications to post now; usually none.
+    public var alerts: [LimitAlert] = []
+    /// What has been alerted, including `alerts`: the next evaluation's
+    /// input, saved between launches.
+    public var alertMemory = AlertMemory()
 }
 
 /// How close a limit is: normal below 90%, warning from 90%, maxed at 100%.

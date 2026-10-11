@@ -2,10 +2,14 @@ import Foundation
 
 /// The usage engine: a pure function from readings and a clock to a snapshot.
 public enum UsageEngine {
+    /// The snapshot at `now`. `alertMemory` is what earlier evaluations
+    /// alerted; the snapshot carries the alerts to post now and the memory to
+    /// pass next time.
     public static func snapshot(
         from readings: Readings,
         now: Date,
         timeZone: TimeZone,
+        alertMemory: AlertMemory = AlertMemory(),
         claudePrices: PriceTable = .claude,
         codexPrices: PriceTable = .codex
     ) -> UsageSnapshot {
@@ -16,10 +20,13 @@ public enum UsageEngine {
         let fiveHour = merged(statusLine?.fiveHour, claude?.fiveHour)
         let weekly = merged(statusLine?.sevenDay, claude?.sevenDay)
         let claudeWindows = [
-            Window(id: "claude.fiveHour", label: "5-hour session", minutes: fiveHourMinutes, reading: fiveHour),
-            Window(id: "claude.sevenDay", label: "Weekly · all models", minutes: weekMinutes, reading: weekly),
+            Window(id: "claude.fiveHour", label: "5-hour session", minutes: fiveHourMinutes, reading: fiveHour,
+                   alertNames: .init(near: "Claude 5-hour session", limit: "Claude 5-hour limit")),
+            Window(id: "claude.sevenDay", label: "Weekly · all models", minutes: weekMinutes, reading: weekly,
+                   alertNames: .init(limit: "Claude weekly limit")),
             // Fable comes only from the usage endpoint.
-            Window(id: "claude.sevenDayFable", label: "Weekly · Fable", minutes: weekMinutes, reading: claude?.sevenDayFable),
+            Window(id: "claude.sevenDayFable", label: "Weekly · Fable", minutes: weekMinutes, reading: claude?.sevenDayFable,
+                   alertNames: .init(limit: "Claude weekly Fable limit")),
         ].map { $0.current(at: now) }
 
         let codex = fresher(readings.codex, readings.codexSessionLog)
@@ -30,7 +37,8 @@ public enum UsageEngine {
                     id: "codex.\($0.windowMinutes)m",
                     label: label(forWindowMinutes: $0.windowMinutes),
                     minutes: $0.windowMinutes,
-                    reading: $0.reading
+                    reading: $0.reading,
+                    alertNames: codexAlertNames(forWindowMinutes: $0.windowMinutes)
                 ).current(at: now)
             }
         let codexHasFiveHour = codexWindows.contains { $0.id == "codex.300m" }
@@ -38,8 +46,18 @@ public enum UsageEngine {
         // comes in the primary slot.
         let codexWeekly = codex?.windows.first { $0.windowMinutes == weekMinutes }?.reading
         if codexWindows.isEmpty {
-            codexWindows = [Window(id: "codex.10080m", label: "Weekly", minutes: weekMinutes, reading: nil)]
+            codexWindows = [Window(id: "codex.10080m", label: "Weekly", minutes: weekMinutes, reading: nil, alertNames: .init(limit: "Codex weekly limit"))]
         }
+
+        let claudeMeters = claudeWindows.map { meter($0, clock: clock) }
+        let codexMeters = codexWindows.map { meter($0, clock: clock) }
+        let alerts = LimitAlerts.evaluate(
+            zip(claudeWindows + codexWindows, claudeMeters + codexMeters).map { window, meter in
+                LimitAlerts.Window(id: window.id, names: window.alertNames, reading: window.reading, prediction: meter.prediction)
+            },
+            memory: alertMemory,
+            clock: clock
+        )
 
         return UsageSnapshot(
             menuBar: MenuBarLabel(
@@ -50,7 +68,7 @@ public enum UsageEngine {
             claude: ServiceSection(
                 plan: readings.claudePlan.map(planBadge),
                 updatedText: [statusLine?.capturedAt, claude?.capturedAt].compactMap(\.self).max().map { clock.updatedText($0) },
-                meters: claudeWindows.map { meter($0, clock: clock) }.withUsage(
+                meters: claudeMeters.withUsage(
                     UsageCost.session(readings.claudeUsage, window: fiveHour, now: now, prices: claudePrices),
                     on: "claude.fiveHour"
                 ),
@@ -60,11 +78,13 @@ public enum UsageEngine {
             codex: ServiceSection(
                 plan: codex?.plan.map(codexPlanBadge),
                 updatedText: codex?.capturedAt.map { clock.updatedText($0) },
-                meters: codexWindows.map { meter($0, clock: clock) },
+                meters: codexMeters,
                 note: codex == nil || codexHasFiveHour || codex?.windows.isEmpty == true
                     ? nil : "No 5-hour limit on your plan",
                 chart: UsageCost.weeklyChart(readings.codexUsage, weekly: codexWeekly, clock: clock, prices: codexPrices)
-            )
+            ),
+            alerts: alerts.alerts,
+            alertMemory: alerts.memory
         )
     }
 
@@ -137,6 +157,15 @@ public enum UsageEngine {
         }
     }
 
+    /// What a Codex window's alerts call it: "Codex weekly limit", "Codex 1-day limit".
+    private static func codexAlertNames(forWindowMinutes minutes: Int) -> LimitAlerts.Names {
+        switch minutes {
+        case 300: .init(near: "Codex 5-hour session", limit: "Codex 5-hour limit")
+        case weekMinutes: .init(limit: "Codex weekly limit")
+        default: .init(limit: "Codex \(label(forWindowMinutes: minutes)) limit")
+        }
+    }
+
     private static func planBadge(_ plan: String) -> String {
         plan.prefix(1).uppercased() + plan.dropFirst()
     }
@@ -173,6 +202,7 @@ private struct Window {
     var label: String
     var minutes: Int
     var reading: LimitReading?
+    var alertNames: LimitAlerts.Names
 
     func current(at now: Date) -> Window {
         var copy = self
