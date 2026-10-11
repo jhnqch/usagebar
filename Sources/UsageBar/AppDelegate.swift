@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let codexUsageLog: UsageLogMonitor<CodexRollout.Parser>
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
+    private let popoverFit = PopoverFit()
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "menu-bar")
 
     init(model: AppModel) {
@@ -35,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.action = #selector(togglePopover(_:))
         statusItem = item
 
-        let host = NSHostingController(rootView: PopoverHost(model: model) { [weak self] in self?.refresh(force: true) })
+        let host = NSHostingController(rootView: PopoverHost(model: model, fit: popoverFit) { [weak self] in self?.refresh(force: true) })
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
         popover.behavior = .transient
@@ -54,6 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh(force: false) }
+        }
+        // A display added, removed or rearranged, or the Dock moving, can
+        // change the room under the status item.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitPopover() }
         }
 
         LoginItem.registerOnFirstRun()
@@ -91,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.performClose(sender)
         } else {
             refresh(force: false)
+            fitPopover()
             // Follow the system's light/dark setting, not the menu bar's
             // appearance (which tracks the wallpaper).
             popover.appearance = NSApp.effectiveAppearance
@@ -99,16 +108,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.contentViewController?.view.window?.makeKey()
         }
     }
+
+    /// Caps the popover to the screen the status item is on; past that, its
+    /// sections scroll.
+    private func fitPopover() {
+        popoverFit.maxHeight = PopoverFit.maxHeight(on: statusItem?.button?.window?.screen ?? NSScreen.main)
+    }
 }
 
-/// Re-renders the popover whenever the model's snapshot changes.
+/// Re-renders the popover whenever the model's snapshot or its height cap changes.
 private struct PopoverHost: View {
     var model: AppModel
+    var fit: PopoverFit
     var onRefresh: () -> Void
 
     var body: some View {
         PopoverView(
             snapshot: model.snapshot,
+            height: .capped(fit.maxHeight),
             onRefresh: onRefresh,
             onQuit: { NSApp.terminate(nil) }
         )

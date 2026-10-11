@@ -7,15 +7,20 @@ let arguments = CommandLine.arguments
 signal(SIGPIPE, SIG_IGN)
 
 if let flag = arguments.firstIndex(of: "--snapshot") {
-    guard arguments.count > flag + 2 else {
-        FileHandle.standardError.write(Data("usage: UsageBar --snapshot <fixture.json> <out.png>\n".utf8))
+    // `--screen-height <pt>`: cap the popover as on a screen with that much visible height.
+    let heightFlag = arguments.firstIndex(of: "--screen-height")
+    let screenHeight = heightFlag.flatMap { arguments.count > $0 + 1 ? Double(arguments[$0 + 1]) : nil }
+    guard arguments.count > flag + 2, heightFlag == nil || screenHeight != nil else {
+        FileHandle.standardError.write(Data("usage: UsageBar --snapshot <fixture.json> <out.png> [--screen-height <pt>]\n".utf8))
         exit(64)
     }
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.prohibited)
     do {
         try MainActor.assumeIsolated {
-            try SnapshotMode.render(fixturePath: arguments[flag + 1], outputPath: arguments[flag + 2])
+            try SnapshotMode.render(
+                fixturePath: arguments[flag + 1], outputPath: arguments[flag + 2], screenHeight: screenHeight.map { CGFloat($0) }
+            )
         }
         exit(0)
     } catch {

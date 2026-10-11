@@ -1,0 +1,20 @@
+{
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "claudePlan": "Max",
+    "claude": {
+      "capturedAt": "2026-10-10T14:37:00-07:00",
+      "fiveHour": { "usedPercent": 6, "resetsAt": "2026-10-10T19:28:00-07:00" },
+      "sevenDay": { "usedPercent": 4, "resetsAt": "2026-10-17T07:00:00-07:00" },
+      "sevenDayFable": { "usedPercent": 1, "resetsAt": "2026-10-17T07:00:00-07:00" }
+    },
+    "codex": {
+      "plan": "pro",
+      "capturedAt": "2026-10-10T14:40:00-07:00",
+      "windows": [
+        { "usedPercent": 2, "windowMinutes": 10080, "resetsAt": "2026-10-17T13:16:00-07:00" }
+      ]
+    }
+  }
+}

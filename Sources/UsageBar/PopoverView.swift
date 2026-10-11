@@ -4,23 +4,92 @@ import UsageCore
 /// Layout A: Claude and Codex stacked, every meter visible, no tabs.
 struct PopoverView: View {
     var snapshot: UsageSnapshot
+    var height: Height = .full
     var onRefresh: () -> Void = {}
     var onQuit: () -> Void = {}
+
+    /// How the popover fits its screen.
+    enum Height: Equatable {
+        /// Everything at full height, with no scroll view: snapshot mode,
+        /// whose `ImageRenderer` can't draw one.
+        case full
+        /// At most this tall. The sections scroll inside it; the footer
+        /// stays in view.
+        case capped(CGFloat)
+        /// Snapshot mode's picture of `capped`: the sections clipped as the
+        /// scroll view shows them, scrolled to the top or to the bottom.
+        case cappedPreview(CGFloat, atBottom: Bool)
+    }
 
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let palette = Palette(scheme)
-        VStack(alignment: .leading, spacing: 14) {
-            SectionView(title: "Claude", symbol: "asterisk", section: snapshot.claude)
-            Rectangle().fill(palette.divider).frame(height: 1)
-            SectionView(title: "Codex", symbol: "apple.terminal", section: snapshot.codex)
+        VStack(spacing: 0) {
+            switch height {
+            case .full:
+                sections
+            case .capped:
+                ScrollView(.vertical) { sections }
+                    .scrollBounceBehavior(.basedOnSize)
+            case let .cappedPreview(_, atBottom):
+                ScrollPreview(atBottom: atBottom) {
+                    sections
+                    Capsule().fill(palette.muted.opacity(0.55))
+                }
+                .clipped()
+            }
             FooterView(onRefresh: onRefresh, onQuit: onQuit)
+                .padding(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
         }
-        .padding(EdgeInsets(top: 14, leading: 16, bottom: 10, trailing: 16))
         .frame(width: 340)
+        .frame(maxHeight: maxHeight)
         .foregroundStyle(palette.text)
         .background(palette.popover)
+    }
+
+    private var maxHeight: CGFloat? {
+        switch height {
+        case .full: nil
+        case let .capped(height), let .cappedPreview(height, _): height
+        }
+    }
+
+    private var sections: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionView(title: "Claude", symbol: "asterisk", section: snapshot.claude)
+            Rectangle().fill(Palette(scheme).divider).frame(height: 1)
+            SectionView(title: "Codex", symbol: "apple.terminal", section: snapshot.codex)
+        }
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+    }
+}
+
+/// Snapshot mode's stand-in for a scroll view (which `ImageRenderer` can't
+/// draw): the content at its full height, pinned to the top or the bottom
+/// of the space it's given, and an overlay scroller thumb sized and placed
+/// as AppKit's would be. Takes two views: the content, then the thumb.
+private struct ScrollPreview: Layout {
+    var atBottom: Bool
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let content = subviews[0].sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? content.width, height: min(proposal.height ?? content.height, content.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let content = subviews[0].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX, y: atBottom ? bounds.maxY - content.height : bounds.minY),
+            proposal: ProposedViewSize(width: bounds.width, height: content.height)
+        )
+        let inset: CGFloat = 3
+        let track = bounds.height - 2 * inset
+        let thumb = CGSize(width: 6, height: max(track * bounds.height / max(content.height, 1), 24))
+        subviews[1].place(
+            at: CGPoint(x: bounds.maxX - inset - thumb.width, y: atBottom ? bounds.maxY - inset - thumb.height : bounds.minY + inset),
+            proposal: ProposedViewSize(thumb)
+        )
     }
 }
 
@@ -90,14 +159,60 @@ private struct MeterView: View {
                     }
                 }
                 .clipShape(Capsule())
-            if let reset = meter.resetText {
-                Text(reset).font(.system(size: 11)).foregroundStyle(palette.muted)
-            }
+                .overlay { tick(palette: palette) }
+            resetAndPrediction(palette: palette)
             if let usage = meter.usageText {
                 Text(usage).font(.system(size: 11)).monospacedDigit().foregroundStyle(palette.muted)
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// The pace tick: a thin mark across the bar, a little taller than it,
+    /// where the window's elapsed time has reached.
+    @ViewBuilder
+    private func tick(palette: Palette) -> some View {
+        if let elapsed = meter.elapsed {
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(palette.text)
+                    .frame(width: Self.tickWidth, height: Self.tickHeight)
+                    .position(
+                        x: min(max(geo.size.width * elapsed, Self.tickWidth / 2), geo.size.width - Self.tickWidth / 2),
+                        y: geo.size.height / 2
+                    )
+            }
+            .accessibilityElement()
+            .accessibilityLabel(meter.elapsedText ?? "")
+        }
+    }
+
+    private static let tickWidth: CGFloat = 2
+    private static let tickHeight: CGFloat = 12
+
+    /// The reset time and the pace prediction: on one line when both fit,
+    /// otherwise the prediction under the reset time.
+    @ViewBuilder
+    private func resetAndPrediction(palette: Palette) -> some View {
+        let reset = meter.resetText.map { Text($0).foregroundStyle(palette.muted) }
+        let prediction = meter.prediction.map {
+            Text($0.text).foregroundStyle($0.isAhead ? palette.text(.warning) : palette.muted)
+        }
+        if reset != nil || prediction != nil {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) {
+                    reset
+                    Spacer(minLength: 10)
+                    prediction
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    reset
+                    prediction
+                }
+            }
+            .font(.system(size: 11))
+            .lineLimit(1)
+        }
     }
 }
 

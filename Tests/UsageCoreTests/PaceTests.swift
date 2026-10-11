@@ -174,6 +174,58 @@ struct PacePredictionTests {
     }
 }
 
+@Suite("Pace fixtures")
+struct PaceFixtureTests {
+    func predictions(_ name: String) throws -> [String?] {
+        let fixture = try loadFixture(name)
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        return (snapshot.claude.meters + snapshot.codex.meters).map(\.prediction?.text)
+    }
+
+    @Test("pace: the weekly meter is ahead of pace, the others below")
+    func pace() throws {
+        #expect(try predictions("pace") == [
+            "Below pace: about 78% by reset",
+            "Ahead of pace: limit around Mon 3 PM",
+            "Below pace: about 55% by reset",
+            "Below pace: about 44% by reset",
+        ])
+    }
+
+    @Test("near: the 5-hour limit comes in about 15 minutes; two weekly limits come before their resets")
+    func near() throws {
+        // Weekly 78% at 61.7%: limit Sun 7:54 PM. Codex 47% at 29.4%: Mon 10:22 PM.
+        #expect(try predictions("near") == [
+            "Ahead of pace: limit around 2:55 PM",
+            "Ahead of pace: limit around Sun 8 PM",
+            "Below pace: about 84% by reset",
+            "Ahead of pace: limit around Mon 10 PM",
+        ])
+    }
+
+    @Test("maxed: the 5-hour limit is reached")
+    func maxed() throws {
+        // Weekly 84% at 61.7%: limit Sun 10:25 AM.
+        #expect(try predictions("maxed") == [
+            "Limit reached",
+            "Ahead of pace: limit around Sun 10 AM",
+            "Below pace: about 94% by reset",
+            "Below pace: about 44% by reset",
+        ])
+    }
+
+    @Test("pace-early: every window is in its first 10%, so each has a tick and no prediction")
+    func early() throws {
+        let fixture = try loadFixture("pace-early")
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        let meters = snapshot.claude.meters + snapshot.codex.meters
+        #expect(meters.map(\.elapsedText) == [
+            "4% of window elapsed", "5% of window elapsed", "5% of window elapsed", "1% of window elapsed",
+        ])
+        #expect(meters.map(\.prediction) == [nil, nil, nil, nil])
+    }
+}
+
 @Suite("Pace across a DST change")
 struct PaceDSTTests {
     @Test("a weekly window over the November change: elapsed and the limit time count real hours")
