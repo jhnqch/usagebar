@@ -55,6 +55,9 @@ private struct SectionView: View {
             if let note = section.note {
                 Text(note).font(.system(size: 11)).foregroundStyle(palette.muted)
             }
+            if let chart = section.chart {
+                CostChartView(chart: chart)
+            }
         }
     }
 }
@@ -90,8 +93,129 @@ private struct MeterView: View {
             if let reset = meter.resetText {
                 Text(reset).font(.system(size: 11)).foregroundStyle(palette.muted)
             }
+            if let usage = meter.usageText {
+                Text(usage).font(.system(size: 11)).monospacedDigit().foregroundStyle(palette.muted)
+            }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The weekly cost chart: a bar per day stacked by model, days to come as
+/// dashed slots, and a legend with each model's dollars and tokens.
+private struct CostChartView: View {
+    var chart: CostChart
+
+    @Environment(\.colorScheme) private var scheme
+
+    static let barHeight: CGFloat = 64
+
+    var body: some View {
+        let palette = Palette(scheme)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(chart.title).font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 8)
+                Text(chart.rangeText).font(.system(size: 11)).monospacedDigit().foregroundStyle(palette.muted)
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                ForEach(chart.days) { day in
+                    DayColumn(day: day, maxDollars: chart.maxDollars)
+                }
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(chart.legend) { row in
+                    HStack(spacing: 7) {
+                        swatch(row.series, palette: palette)
+                        Text(row.name)
+                        Spacer(minLength: 8)
+                        Text(row.valueText).monospacedDigit().foregroundStyle(palette.muted)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                HStack(spacing: 7) {
+                    Color.clear.frame(width: 8, height: 8)
+                    Text("Total").fontWeight(.medium)
+                    Spacer(minLength: 8)
+                    Text(chart.totalText).monospacedDigit().fontWeight(.medium)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            .font(.system(size: 11))
+        }
+        .padding(.top, 4)
+    }
+
+    /// The model's colour; a dashed outline for a model with no price,
+    /// which has no bar.
+    @ViewBuilder
+    private func swatch(_ series: Int?, palette: Palette) -> some View {
+        if let series {
+            RoundedRectangle(cornerRadius: 2).fill(palette.series(series)).frame(width: 8, height: 8)
+        } else {
+            RoundedRectangle(cornerRadius: 2)
+                .strokeBorder(palette.muted, style: StrokeStyle(lineWidth: 1, dash: [2, 1.5]))
+                .frame(width: 8, height: 8)
+        }
+    }
+}
+
+private struct DayColumn: View {
+    var day: CostChart.Day
+    var maxDollars: Double
+
+    @Environment(\.colorScheme) private var scheme
+
+    /// Space between stacked segments.
+    private static let gap: CGFloat = 2
+
+    var body: some View {
+        let palette = Palette(scheme)
+        VStack(spacing: 4) {
+            GeometryReader { geo in
+                let width = geo.size.width * 0.7
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    bar(palette: palette)
+                        .frame(width: width)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: CostChartView.barHeight)
+            Text(day.label)
+                .font(.system(size: 10, weight: day.isToday ? .bold : .regular))
+                .foregroundStyle(day.isToday ? palette.text : palette.muted)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .frame(maxWidth: .infinity)
+        .help(day.detailText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(day.detailText)
+    }
+
+    @ViewBuilder
+    private func bar(palette: Palette) -> some View {
+        if day.isFuture {
+            RoundedRectangle(cornerRadius: 3)
+                .strokeBorder(palette.dash, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                .frame(height: CostChartView.barHeight)
+        } else if day.dollars <= 0 || maxDollars <= 0 {
+            RoundedRectangle(cornerRadius: 1).fill(palette.track).frame(height: 2)
+        } else {
+            // The whole bar is proportional to the day's dollars; the gaps
+            // between segments come out of it, not on top.
+            let total = max(CostChartView.barHeight * day.dollars / maxDollars, 2)
+            let gaps = Self.gap * CGFloat(day.segments.count - 1)
+            let room = max(total - gaps, 0)
+            VStack(spacing: Self.gap) {
+                ForEach(Array(day.segments.reversed().enumerated()), id: \.offset) { _, segment in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(palette.series(segment.series))
+                        .frame(height: max(room * segment.dollars / day.dollars, 1))
+                }
+            }
+        }
     }
 }
 

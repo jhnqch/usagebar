@@ -14,17 +14,32 @@ public enum ClaudeTranscript {
     public static func entries(in log: Data) -> [UsageEntry] {
         let decoder = JSONDecoder()
         var entries: [UsageEntry] = []
-        for line in log.split(separator: newline) where line.firstRange(of: usageKey) != nil {
-            // Only assistant lines carry `"usage"`; checking the bytes first
-            // skips decoding the (much larger) tool results.
-            if let entry = (try? decoder.decode(Line.self, from: Data(line)))?.entry {
-                entries.append(entry)
+        log.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.baseAddress else { return }
+            usageKey.withUnsafeBytes { (key: UnsafeRawBufferPointer) in
+                var start = 0
+                while start < raw.count {
+                    let line = base + start
+                    var end = raw.count
+                    if let newline = memchr(line, 0x0A, raw.count - start) {
+                        end = start + (UnsafeRawPointer(newline) - line)
+                    }
+                    // Only assistant lines carry `"usage"`. Checking the bytes
+                    // first skips decoding the user lines, which hold the
+                    // (much larger) tool results.
+                    let length = end - start
+                    if length > 0, memmem(line, length, key.baseAddress, key.count) != nil,
+                       let decoded = try? decoder.decode(Line.self, from: Data(bytes: line, count: length)),
+                       let entry = decoded.entry {
+                        entries.append(entry)
+                    }
+                    start = end + 1
+                }
             }
         }
         return entries
     }
 
-    private static let newline = UInt8(ascii: "\n")
     private static let usageKey = Data(#""usage""#.utf8)
 
     /// One transcript line; `entry` is nil unless it's a model reply with usage.

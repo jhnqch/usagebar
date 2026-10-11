@@ -15,6 +15,8 @@ struct Palette {
     var border: Color { isDark ? .white.opacity(0.14) : .black.opacity(0.12) }
     var divider: Color { isDark ? .white.opacity(0.09) : .black.opacity(0.08) }
     var button: Color { isDark ? .white.opacity(0.08) : .black.opacity(0.05) }
+    /// Outline of a day still to come in the cost chart.
+    var dash: Color { pick(0xC3C3CA, 0x5A5A63) }
     // Snapshot-mode backdrop and menu bar strip.
     var wall: Color { pick(0x7A8A99, 0x1B2530) }
     var menuBar: Color { pick(0xECECEF, 0x232327) }
@@ -25,6 +27,27 @@ struct Palette {
         case .warning: pick(0xF08A1C, 0xF5A142)
         case .maxed: pick(0xD93A30, 0xFF6B5E)
         }
+    }
+
+    /// A model's colour in the cost chart, by its slot: Opus, Fable, Sonnet,
+    /// Haiku, then extra models, then a shared grey. The categorical
+    /// palette from the dataviz skill, in its validated order (adjacent
+    /// pairs separable under colour-vision deficiency, light and dark,
+    /// against this popover's surfaces).
+    func series(_ slot: Int) -> Color {
+        let steps: [(UInt32, UInt32)] = [
+            (0x2A78D6, 0x3987E5), // blue: Opus
+            (0xEB6834, 0xD95926), // orange: Fable
+            (0x1BAF7A, 0x199E70), // aqua: Sonnet
+            (0xEDA100, 0xC98500), // yellow: Haiku
+            (0xE87BA4, 0xD55181), // magenta
+            (0x008300, 0x008300), // green
+            (0x6250D6, 0x9085E9), // violet
+            (0xE34948, 0xE66767), // red
+            (0x8E8E96, 0x7A7A82), // grey: any further model
+        ]
+        let step = steps[min(max(slot, 0), steps.count - 1)]
+        return pick(step.0, step.1)
     }
 
     func text(_ level: Level) -> Color {

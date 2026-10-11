@@ -157,4 +157,24 @@ struct FixtureTests {
         #expect(snapshot.claude.updatedText == updated)
         #expect(snapshot.claude.plan == "Max")
     }
+
+    @Test("a fixture can carry recorded transcript lines, read and priced as the app reads them")
+    func recordedTranscriptFixture() throws {
+        // Five days of replies across Opus 5.5, Fable 5.1, Sonnet 5.5, Haiku
+        // 5.5 (prompts over 100K, so its higher rates) and an unreleased
+        // "claude-opus-6"; one reply logged twice while streaming; one
+        // <synthetic> line. Dollars worked out separately from the pricing page.
+        let fixture = try loadFixture("claude-cost")
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        let chart = try #require(snapshot.claude.chart)
+        #expect(chart.title == "This week")
+        #expect(chart.rangeText == "Tue 7 AM to Tue 7 AM · 2d 16h left")
+        #expect(chart.days.map { ($0.dollars * 100).rounded() / 100 } == [43.77, 119.46, 68.02, 103.71, 80.76, 0, 0, 0])
+        #expect(chart.legend.map(\.name) == ["Opus 5.5", "Fable 5.1", "Sonnet 5.5", "Haiku 5.5", "claude-opus-6"])
+        #expect(chart.legend.map(\.valueText) == [
+            "$313 · 1B tokens", "$66 · 63M tokens", "$7.61 · 41M tokens", "$29 · 13M tokens", "no price · 38M tokens",
+        ])
+        #expect(chart.totalText == "$416 · 1.2B tokens")
+        #expect(snapshot.claude.meters[0].usageText == "$42 · 100M tokens this session")
+    }
 }
