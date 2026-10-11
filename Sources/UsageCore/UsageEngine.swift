@@ -35,13 +35,13 @@ public enum UsageEngine {
             ),
             claude: ServiceSection(
                 plan: claude?.plan.map(planBadge),
-                updatedText: claude.map { clock.updatedText($0.capturedAt) },
+                updatedText: claude?.capturedAt.map { clock.updatedText($0) },
                 meters: claudeWindows.map { meter($0, clock: clock) },
                 note: nil
             ),
             codex: ServiceSection(
                 plan: codex?.plan.map(planBadge),
-                updatedText: codex.map { clock.updatedText($0.capturedAt) },
+                updatedText: codex?.capturedAt.map { clock.updatedText($0) },
                 meters: codexWindows.map { meter($0, clock: clock) },
                 note: codex == nil || codexHasFiveHour || codex?.windows.isEmpty == true
                     ? nil : "No 5-hour limit on your plan"

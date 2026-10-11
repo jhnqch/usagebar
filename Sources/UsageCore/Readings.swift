@@ -28,14 +28,15 @@ public struct LimitReading: Decodable, Equatable, Sendable {
 public struct ClaudeLimits: Decodable, Equatable, Sendable {
     /// Plan name, e.g. "Max".
     public var plan: String?
-    public var capturedAt: Date
+    /// When the source took the reading; nil when it isn't readable.
+    public var capturedAt: Date?
     public var fiveHour: LimitReading?
     public var sevenDay: LimitReading?
     public var sevenDayFable: LimitReading?
 
     public init(
         plan: String? = nil,
-        capturedAt: Date,
+        capturedAt: Date?,
         fiveHour: LimitReading? = nil,
         sevenDay: LimitReading? = nil,
         sevenDayFable: LimitReading? = nil
@@ -52,10 +53,11 @@ public struct ClaudeLimits: Decodable, Equatable, Sendable {
 public struct CodexLimits: Decodable, Equatable, Sendable {
     /// Plan type as Codex reports it, e.g. "pro".
     public var plan: String?
-    public var capturedAt: Date
+    /// When the source took the reading; nil when it isn't readable.
+    public var capturedAt: Date?
     public var windows: [CodexWindow]
 
-    public init(plan: String? = nil, capturedAt: Date, windows: [CodexWindow]) {
+    public init(plan: String? = nil, capturedAt: Date?, windows: [CodexWindow]) {
         self.plan = plan
         self.capturedAt = capturedAt
         self.windows = windows
@@ -96,7 +98,7 @@ extension ClaudeLimits {
     func shifted(by offset: TimeInterval) -> ClaudeLimits {
         ClaudeLimits(
             plan: plan,
-            capturedAt: capturedAt + offset,
+            capturedAt: capturedAt.map { $0 + offset },
             fiveHour: fiveHour?.shifted(by: offset),
             sevenDay: sevenDay?.shifted(by: offset),
             sevenDayFable: sevenDayFable?.shifted(by: offset)
@@ -108,7 +110,7 @@ extension CodexLimits {
     func shifted(by offset: TimeInterval) -> CodexLimits {
         CodexLimits(
             plan: plan,
-            capturedAt: capturedAt + offset,
+            capturedAt: capturedAt.map { $0 + offset },
             windows: windows.map {
                 CodexWindow(windowMinutes: $0.windowMinutes, reading: $0.reading?.shifted(by: offset))
             }
@@ -142,7 +144,7 @@ extension ClaudeLimits {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         plan = try? c.decodeIfPresent(String.self, forKey: .plan)
-        capturedAt = try c.decode(Date.self, forKey: .capturedAt)
+        capturedAt = try? c.decodeIfPresent(Date.self, forKey: .capturedAt)
         fiveHour = try? c.decodeIfPresent(LimitReading.self, forKey: .fiveHour)
         sevenDay = try? c.decodeIfPresent(LimitReading.self, forKey: .sevenDay)
         sevenDayFable = try? c.decodeIfPresent(LimitReading.self, forKey: .sevenDayFable)
@@ -157,7 +159,7 @@ extension CodexLimits {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         plan = try? c.decodeIfPresent(String.self, forKey: .plan)
-        capturedAt = try c.decode(Date.self, forKey: .capturedAt)
+        capturedAt = try? c.decodeIfPresent(Date.self, forKey: .capturedAt)
         windows = ((try? c.decodeIfPresent([Lenient<CodexWindow>].self, forKey: .windows)) ?? [])
             .compactMap(\.value)
     }

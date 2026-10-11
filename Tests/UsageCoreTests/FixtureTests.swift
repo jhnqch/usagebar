@@ -57,6 +57,34 @@ struct FixtureTests {
         #expect(snapshot.menuBar.text == "✳ — · ⌘ 13%")
     }
 
+    @Test("a missing or mistyped capture time hides only the updated time")
+    func missingCapturedAt() throws {
+        let json = """
+        {
+          "now": "2026-10-10T14:40:00-07:00",
+          "readings": {
+            "claude": {
+              "plan": "Max",
+              "fiveHour": { "usedPercent": 42, "resetsAt": "2026-10-10T16:58:00-07:00" },
+              "sevenDay": { "usedPercent": 61, "resetsAt": "2026-10-13T07:00:00-07:00" }
+            },
+            "codex": {
+              "plan": "pro",
+              "capturedAt": "a moment ago",
+              "windows": [{ "usedPercent": 13, "windowMinutes": 10080, "resetsAt": "2026-10-15T13:16:00-07:00" }]
+            }
+          }
+        }
+        """
+        let fixture = try Fixture.decode(Data(json.utf8))
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: losAngeles)
+        #expect(snapshot.menuBar.text == "✳ 61% · ⌘ 13%")
+        #expect(snapshot.claude.meters.map(\.percentText) == ["42%", "61%", "—"])
+        #expect(snapshot.claude.updatedText == nil)
+        #expect(snapshot.codex.meters.map(\.percentText) == ["13%"])
+        #expect(snapshot.codex.updatedText == nil)
+    }
+
     @Test("a malformed Codex 5-hour window shows a dash, not 'no 5-hour limit'")
     func malformedCodexFiveHour() throws {
         let json = """
