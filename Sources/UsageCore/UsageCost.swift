@@ -45,7 +45,7 @@ enum UsageCost {
         let models = Dictionary(grouping: entries, by: \.model)
         let series = seriesSlots(for: Array(models.keys), prices: prices)
 
-        let days = dayBuckets(window, calendar: calendar).map { bucket in
+        let days = dayBuckets(window, calendar: calendar).map { (bucket: DateInterval, day: Date) in
             let dayEntries = entries.filter { bucket.start <= $0.timestamp && $0.timestamp < bucket.end }
             let isFuture = bucket.start > now
             let isToday = bucket.start <= now && now < bucket.end
@@ -59,12 +59,12 @@ enum UsageCost {
             let total = Total(dayEntries, prices: prices)
             return CostChart.Day(
                 id: bucket.start,
-                label: isToday ? "Today" : clock.weekday(bucket.start),
+                label: isToday ? "Today" : clock.weekday(day),
                 isToday: isToday,
                 isFuture: isFuture,
                 segments: segments,
                 dollars: segments.reduce(0) { $0 + $1.dollars },
-                detailText: isFuture ? "\(clock.dayAndDate(bucket.start)) · to come" : "\(clock.dayAndDate(bucket.start)) · \(total.text)"
+                detailText: isFuture ? "\(clock.dayAndDate(day)) · to come" : "\(clock.dayAndDate(day)) · \(total.text)"
             )
         }
 
@@ -117,24 +117,25 @@ enum UsageCost {
         return reset.timeIntervalSince(now) <= 10_000 * week ? reset : nil
     }
 
-    /// The window cut at local midnights. A piece under an hour long (a
-    /// window that starts or ends just off midnight) joins its neighbour
-    /// rather than drawing a near-empty bar.
-    private static func dayBuckets(_ window: DateInterval, calendar: Calendar) -> [DateInterval] {
-        var buckets: [DateInterval] = []
+    /// The window cut at local midnights, each piece with the start of the
+    /// calendar day it's named after. A piece under an hour long (a window
+    /// that starts or ends just off midnight) joins its neighbour, under the
+    /// neighbour's day, rather than drawing a near-empty bar.
+    private static func dayBuckets(_ window: DateInterval, calendar: Calendar) -> [(bucket: DateInterval, day: Date)] {
+        var buckets: [(bucket: DateInterval, day: Date)] = []
         var dayStart = calendar.startOfDay(for: window.start)
         while dayStart < window.end, buckets.count < 16 {
             guard let next = calendar.date(byAdding: .day, value: 1, to: dayStart), next > dayStart else { break }
-            buckets.append(DateInterval(start: max(dayStart, window.start), end: min(next, window.end)))
+            buckets.append((DateInterval(start: max(dayStart, window.start), end: min(next, window.end)), dayStart))
             dayStart = next
         }
-        if buckets.count > 1, buckets[0].duration < 3600 {
-            buckets[1] = DateInterval(start: buckets[0].start, end: buckets[1].end)
-            buckets.removeFirst()
+        if buckets.count > 1, buckets[0].bucket.duration < 3600 {
+            let first = buckets.removeFirst()
+            buckets[0].bucket = DateInterval(start: first.bucket.start, end: buckets[0].bucket.end)
         }
-        if buckets.count > 1, buckets[buckets.count - 1].duration < 3600 {
+        if buckets.count > 1, buckets[buckets.count - 1].bucket.duration < 3600 {
             let last = buckets.removeLast()
-            buckets[buckets.count - 1] = DateInterval(start: buckets[buckets.count - 1].start, end: last.end)
+            buckets[buckets.count - 1].bucket = DateInterval(start: buckets[buckets.count - 1].bucket.start, end: last.bucket.end)
         }
         return buckets
     }

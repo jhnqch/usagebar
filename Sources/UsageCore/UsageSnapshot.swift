@@ -93,6 +93,30 @@ public struct CostChart: Equatable, Sendable {
         public var dollars: Double
         /// "Wed Oct 7 · $3.50 · 100K tokens", or "Mon Oct 12 · to come".
         public var detailText: String
+
+        public init(id: Date, label: String, isToday: Bool, isFuture: Bool, segments: [Segment], dollars: Double, detailText: String) {
+            self.id = id
+            self.label = label
+            self.isToday = isToday
+            self.isFuture = isFuture
+            self.segments = segments
+            self.dollars = dollars
+            self.detailText = detailText
+        }
+
+        /// How to draw the day's bar: its segments' heights, bottom to top,
+        /// and the gap between them. The bar's height is proportional to
+        /// the day's dollars against the tallest day's, and at least 2. The
+        /// gaps come out of that height, and shrink on a short bar so they
+        /// take at most a third of it.
+        public func stack(barHeight: Double, maxDollars: Double, gap: Double) -> (heights: [Double], gap: Double) {
+            guard dollars > 0, maxDollars > 0, !segments.isEmpty else { return ([], 0) }
+            let total = max(barHeight * dollars / maxDollars, 2)
+            let gaps = Double(segments.count - 1)
+            let gap = gaps > 0 ? min(gap, total / 3 / gaps) : 0
+            let room = total - gap * gaps
+            return (segments.map { room * $0.dollars / dollars }, gap)
+        }
     }
 
     public struct Segment: Equatable, Sendable {

@@ -203,16 +203,12 @@ private struct DayColumn: View {
         } else if day.dollars <= 0 || maxDollars <= 0 {
             RoundedRectangle(cornerRadius: 1).fill(palette.track).frame(height: 2)
         } else {
-            // The whole bar is proportional to the day's dollars; the gaps
-            // between segments come out of it, not on top.
-            let total = max(CostChartView.barHeight * day.dollars / maxDollars, 2)
-            let gaps = Self.gap * CGFloat(day.segments.count - 1)
-            let room = max(total - gaps, 0)
-            VStack(spacing: Self.gap) {
-                ForEach(Array(day.segments.reversed().enumerated()), id: \.offset) { _, segment in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(palette.series(segment.series))
-                        .frame(height: max(room * segment.dollars / day.dollars, 1))
+            let stack = day.stack(barHeight: CostChartView.barHeight, maxDollars: maxDollars, gap: Self.gap)
+            VStack(spacing: stack.gap) {
+                ForEach(Array(zip(day.segments, stack.heights).reversed().enumerated()), id: \.offset) { _, pair in
+                    RoundedRectangle(cornerRadius: min(2, pair.1 / 2))
+                        .fill(palette.series(pair.0.series))
+                        .frame(height: pair.1)
                 }
             }
         }

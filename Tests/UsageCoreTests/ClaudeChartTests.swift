@@ -138,4 +138,40 @@ struct ClaudeChartTests {
         #expect(chart.legend.map(\.name) == ["Opus 5.5", "Sonnet 5.5", "Opus 5"])
         #expect(chart.legend.map(\.series) == [0, 2, 4])
     }
+
+    @Test("a window that starts just before midnight labels its first bar with the day that holds it")
+    func firstBarLabel() throws {
+        // Starts Tue 6 Oct at 11:30 PM: that half hour joins Wednesday's bar.
+        let chart = try chart([
+            transcriptLine(id: "msg_1", at: "2026-10-06T23:45:00-07:00", output: 50_000),
+            transcriptLine(id: "msg_2", at: "2026-10-07T12:00:00-07:00", output: 50_000),
+        ], limits: claude(weeklyResetsAt: date("2026-10-13T23:30:00-07:00")))
+        #expect(chart.days.map(\.label) == ["Wed", "Thu", "Fri", "Today", "Sun", "Mon", "Tue"])
+        #expect(chart.days[0].dollars == 2)
+        #expect(chart.days[0].detailText == "Wed Oct 7 · $2.00 · 100K tokens")
+    }
+
+    @Test(
+        "a bar's segments and the gaps between them add up to the bar's height, however small",
+        arguments: [
+            // day's share of the tallest bar, segments
+            (1.0, 3), (0.5, 2), (0.01, 6), (0.001, 1),
+        ]
+    )
+    func stackFitsBar(share: Double, segments: Int) {
+        let day = CostChart.Day(
+            id: now, label: "Wed", isToday: false, isFuture: false,
+            segments: (0..<segments).map { CostChart.Segment(model: "m\($0)", series: $0, dollars: share * 100 / Double(segments)) },
+            dollars: share * 100,
+            detailText: ""
+        )
+        let stack = day.stack(barHeight: 64, maxDollars: 100, gap: 2)
+        // The bar is proportional to the day's dollars, at least 2 points.
+        let height = max(64 * share, 2)
+        let drawn = stack.heights.reduce(0, +) + stack.gap * Double(segments - 1)
+        #expect(abs(drawn - height) < 1e-9)
+        #expect(stack.heights.count == segments)
+        #expect(stack.gap <= 2)
+        if share >= 0.5 { #expect(stack.gap == 2) }
+    }
 }
