@@ -38,9 +38,11 @@ public enum OpenRouterAPI: KeyAPI {
     public static let keyHint: String? = "Create a key at openrouter.ai/settings/keys"
 
     public struct Reading: Equatable, Sendable {
-        /// When the answer came: the UTC day, week and month its spend
-        /// belongs to.
-        public var receivedAt: Date
+        /// When the UTC day, week and month the answer's spend (and free
+        /// requests) belong to end: the next midnight UTC after it came.
+        public var dayEnds: Date?
+        public var weekEnds: Date?
+        public var monthEnds: Date?
         public var isFreeTier: Bool?
         public var keyLimit: KeyLimit
         public var spentToday: Double?
@@ -98,7 +100,9 @@ public enum OpenRouterAPI: KeyAPI {
 
         let freeRequests = data["free_model_daily_requests"] as? [String: Any] ?? [:]
         let reading = Reading(
-            receivedAt: receivedAt,
+            dayEnds: nextReset(after: receivedAt, interval: "daily"),
+            weekEnds: nextReset(after: receivedAt, interval: "weekly"),
+            monthEnds: nextReset(after: receivedAt, interval: "monthly"),
             isFreeTier: data["is_free_tier"] as? Bool,
             keyLimit: keyLimit,
             spentToday: number(data["usage_daily"]),
@@ -108,9 +112,12 @@ public enum OpenRouterAPI: KeyAPI {
             freeRequestsLeft: number(freeRequests["remaining"]),
             freeRequestsLimit: number(freeRequests["limit"])
         )
-        let empty = Reading(receivedAt: receivedAt, isFreeTier: nil, keyLimit: .unknown, spentToday: nil, spentThisWeek: nil,
-                            spentThisMonth: nil, budgets: [], freeRequestsLeft: nil, freeRequestsLimit: nil)
-        return reading == empty ? nil : reading
+        // The period ends come from the clock, not the answer: nothing
+        // readable in it is no reading.
+        let readable = reading.isFreeTier != nil || reading.keyLimit != .unknown || reading.spentToday != nil
+            || reading.spentThisWeek != nil || reading.spentThisMonth != nil || !reading.budgets.isEmpty
+            || reading.freeRequestsLeft != nil || reading.freeRequestsLimit != nil
+        return readable ? reading : nil
     }
 
     /// One `budgets[]` entry; nil when it isn't an object or is the
@@ -140,35 +147,35 @@ public enum OpenRouterAPI: KeyAPI {
         }
         var ids: Set<String> = []
         for budget in reading?.budgets ?? [] {
-            rows.append(row(budget, ids: &ids))
+            rows.append(row(budget, ids: &ids, clock: clock))
         }
         if let reading, reading.isFreeTier == true {
             let requests = Amount.Unit.count("")
             rows.append(.credit(CreditRow(
                 id: "openrouter.freeRequests", label: "Free requests",
                 left: reading.freeRequestsLeft.map { Amount($0, requests) }, of: reading.freeRequestsLimit.map { Amount($0, requests) },
-                resetsAt: nextReset(after: reading.receivedAt, interval: "daily")
+                resetsAt: reading.dayEnds
             )))
         }
         // Spend for a UTC day, week or month that has ended since the answer
         // (the Mac slept, or polls failed) no longer holds.
-        func spend(_ value: Double?, _ interval: String) -> Amount? {
-            guard let value, let reading, let end = nextReset(after: reading.receivedAt, interval: interval), end > clock.now else {
-                return nil
-            }
+        func spend(_ value: Double?, until end: Date?) -> Amount? {
+            guard let value, let end, end > clock.now else { return nil }
             return dollars(value)
         }
         rows += [
-            .value(ValueRow(id: "openrouter.today", label: "Today", value: spend(reading?.spentToday, "daily"))),
-            .value(ValueRow(id: "openrouter.week", label: "This week", value: spend(reading?.spentThisWeek, "weekly"))),
-            .value(ValueRow(id: "openrouter.month", label: "This month", value: spend(reading?.spentThisMonth, "monthly"))),
+            .value(ValueRow(id: "openrouter.today", label: "Today", value: spend(reading?.spentToday, until: reading?.dayEnds))),
+            .value(ValueRow(id: "openrouter.week", label: "This week", value: spend(reading?.spentThisWeek, until: reading?.weekEnds))),
+            .value(ValueRow(id: "openrouter.month", label: "This month", value: spend(reading?.spentThisMonth, until: reading?.monthEnds))),
         ]
         return ProviderReport(plan: reading?.isFreeTier == true ? "Free" : nil, rows: rows)
     }
 
     public static func shift(_ reading: Reading, by offset: TimeInterval) -> Reading {
         var copy = reading
-        copy.receivedAt = reading.receivedAt + offset
+        copy.dayEnds = reading.dayEnds.map { $0 + offset }
+        copy.weekEnds = reading.weekEnds.map { $0 + offset }
+        copy.monthEnds = reading.monthEnds.map { $0 + offset }
         if case let .limited(left, limit, resetsAt) = reading.keyLimit {
             copy.keyLimit = .limited(left: left, limit: limit, resetsAt: resetsAt.map { $0 + offset })
         }
@@ -182,7 +189,7 @@ public enum OpenRouterAPI: KeyAPI {
 
     /// A budget that resets as a limit window, so it gets pace and alerts;
     /// one that never resets as a credit meter.
-    private static func row(_ budget: Budget, ids: inout Set<String>) -> ProviderReport.Row {
+    private static func row(_ budget: Budget, ids: inout Set<String>, clock: Clock) -> ProviderReport.Row {
         let noun = switch budget.scope {
         case "api_key", "workspace_default_key": "key budget"
         case "member", "workspace_default_member": "member budget"
@@ -198,9 +205,11 @@ public enum OpenRouterAPI: KeyAPI {
         let name = period + noun
         let label = name.prefix(1).uppercased() + name.dropFirst()
 
-        // Known by its id when OpenRouter gives one, so alert memory follows
-        // it if budgets are reordered; a repeat gets a suffix.
-        let base = "openrouter.budget.\(budget.budgetID ?? "\(budget.scope ?? "unknown").\(budget.interval ?? "none")")"
+        // Known by its scope and its id when OpenRouter gives one (one
+        // guardrail can apply to a member and a key: two budgets), so alert
+        // memory follows it if budgets are reordered or one goes away; a
+        // repeat gets a suffix.
+        let base = "openrouter.budget.\(budget.scope ?? "unknown").\(budget.budgetID ?? budget.interval ?? "none")"
         var id = base
         var suffix = 2
         while !ids.insert(id).inserted {
@@ -217,7 +226,10 @@ public enum OpenRouterAPI: KeyAPI {
                 LimitReading(usedPercent: limit > 0 ? spent / limit * 100 : 100, resetsAt: resetsAt)
             }
         }
-        let usage = budget.limit.flatMap { limit in budget.spent.map { "\(dollars($0).text) of \(dollars(limit).text) spent" } }
+        // Once the reset has passed the meter reads 0%, and the old window's
+        // spend no longer holds either.
+        let usage = resetsAt <= clock.now ? nil
+            : budget.limit.flatMap { limit in budget.spent.map { "\(dollars($0).text) of \(dollars(limit).text) spent" } }
         return .window(LimitWindow(
             id: id, label: label, minutes: windowMinutes(budget.interval, endingAt: resetsAt), reading: reading,
             alertName: "OpenRouter \(name)", usageText: usage

@@ -164,6 +164,39 @@ struct OpenRouterTests {
                                             selection: ProviderSelection(enabled: ["openrouter"], menuBar: ["openrouter"]))
         #expect(snapshot.menuBar.text == "⊛ 92%")
     }
+
+    /// One guardrail can apply to a member and to a key: two budgets with
+    /// the same guardrail id. Alert memory knows each by its scope too, so
+    /// dropping one leaves the other's id alone.
+    @Test("a budget's id holds its scope, so a guardrail on a member and a key stays two windows")
+    func budgetIDs() throws {
+        func ids(_ budgets: String) throws -> [String] {
+            try #require(try snapshot(data: #"{ "budgets": [\#(budgets)] }"#)["openrouter"]).rows.compactMap { row in
+                if case let .meter(meter) = row { meter.id } else { nil }
+            }
+        }
+        let member = #"{ "scope": "member", "guardrail_id": "gr_synthetic", "limit_usd": 5, "spend_usd": 1, "reset_interval": "daily" }"#
+        let key = #"{ "scope": "api_key", "guardrail_id": "gr_synthetic", "limit_usd": 5, "spend_usd": 2, "reset_interval": "daily" }"#
+        #expect(try ids(member + "," + key) == ["openrouter.budget.member.gr_synthetic", "openrouter.budget.api_key.gr_synthetic"])
+        #expect(try ids(key) == ["openrouter.budget.api_key.gr_synthetic"])
+    }
+
+    /// Midnight UTC passed at 5 PM while the Mac slept: the meter reads 0%,
+    /// and the old window's spend goes with it.
+    @Test("a budget whose reset has passed drops the old window's spend")
+    func budgetAfterReset() throws {
+        let section = try #require(try snapshot("openrouter-budgets", at: date("2026-10-10T17:05:00-07:00"))["openrouter"])
+        #expect(texts(section)[1] == "Daily key budget 0% · Reset at 5:00 PM")
+    }
+
+    /// Six hours later the day's end is six hours later too: 11 PM.
+    @Test("a rebased fixture keeps the free-request reset and spend where they sat")
+    func rebasedDerivedResets() throws {
+        let fixture = try loadFixture("openrouter-free")
+        let later = fixture.now + 6 * 3600
+        let section = try #require(UsageEngine.snapshot(from: fixture.readings(rebasedTo: later), now: later, timeZone: fixture.timeZone)["openrouter"])
+        #expect(texts(section) == ["Free requests 38 left of 50 · Resets in 2h 20m (11:00 PM)", "Today $0", "This week $0", "This month $0"])
+    }
 }
 
 @Suite("OpenRouter budget alerts")
