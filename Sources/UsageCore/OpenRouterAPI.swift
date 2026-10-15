@@ -19,7 +19,8 @@ import Foundation
 ///   `limit_reset` is "daily", "weekly", "monthly" or null (never); resets
 ///   fall at midnight UTC, weeks start on Monday.
 /// - `usage_daily/weekly/monthly` are what the key spent this UTC day,
-///   week and month: value rows.
+///   week and month: value rows, which show "—" once that day, week or
+///   month has ended without a newer answer.
 /// - Each of `budgets[]` (guardrails and workspace budgets, in dollars) is
 ///   a limit window, so it gets pace and the 90% and reset alerts. The
 ///   `key_limit` budget repeats the key's limit, already shown as the
@@ -149,10 +150,18 @@ public enum OpenRouterAPI: KeyAPI {
                 resetsAt: nextReset(after: reading.receivedAt, interval: "daily")
             )))
         }
+        // Spend for a UTC day, week or month that has ended since the answer
+        // (the Mac slept, or polls failed) no longer holds.
+        func spend(_ value: Double?, _ interval: String) -> Amount? {
+            guard let value, let reading, let end = nextReset(after: reading.receivedAt, interval: interval), end > clock.now else {
+                return nil
+            }
+            return dollars(value)
+        }
         rows += [
-            .value(ValueRow(id: "openrouter.today", label: "Today", value: reading?.spentToday.map(dollars))),
-            .value(ValueRow(id: "openrouter.week", label: "This week", value: reading?.spentThisWeek.map(dollars))),
-            .value(ValueRow(id: "openrouter.month", label: "This month", value: reading?.spentThisMonth.map(dollars))),
+            .value(ValueRow(id: "openrouter.today", label: "Today", value: spend(reading?.spentToday, "daily"))),
+            .value(ValueRow(id: "openrouter.week", label: "This week", value: spend(reading?.spentThisWeek, "weekly"))),
+            .value(ValueRow(id: "openrouter.month", label: "This month", value: spend(reading?.spentThisMonth, "monthly"))),
         ]
         return ProviderReport(plan: reading?.isFreeTier == true ? "Free" : nil, rows: rows)
     }

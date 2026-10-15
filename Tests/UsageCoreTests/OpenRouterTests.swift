@@ -97,6 +97,73 @@ struct OpenRouterTests {
         }
         #expect(elapsed == ["90% of window elapsed", "32% of window elapsed"])
     }
+
+    @Test("missing, null and mistyped fields degrade only their own rows; malformed budgets drop out")
+    func tolerant() throws {
+        let section = try #require(try snapshot(data: """
+            { "limit": "twenty", "usage_daily": null, "usage_weekly": "4.2", "is_free_tier": "no", "something_new": [1],
+              "budgets": [null, 7, "x",
+                { "scope": "api_key", "limit_usd": 10, "reset_interval": "weekly", "resets_at": "2026-10-12T00:00:00Z" },
+                { "scope": "galaxy", "guardrail_id": "gr_synthetic_odd", "limit_usd": 40, "remaining_usd": 30, "resets_at": "soon" },
+                { "scope": "workspace", "limit_usd": 100, "spend_usd": 25, "reset_interval": "fortnightly",
+                  "resets_at": "2026-11-01T00:00:00Z" }] }
+            """)["openrouter"])
+        #expect(section.plan == nil)
+        #expect(texts(section) == [
+            "Key limit —",
+            "Weekly key budget —",
+            "Budget $30 left of $40",
+            "Workspace budget 25% · Resets Sat 5:00 PM · $25 of $100 spent",
+            "Today —",
+            "This week $4.20",
+            "This month —",
+        ])
+    }
+
+    @Test("an answer with nothing readable shows dashes and says it couldn't be read")
+    func unreadable() throws {
+        let section = try #require(try snapshot(data: #"{ "renamed": { "limit": 20 } }"#)["openrouter"])
+        #expect(texts(section) == ["Today —", "This week —", "This month —"])
+        #expect(section.note == "Couldn't read the answer from openrouter.ai")
+    }
+
+    /// The answer came at 2:38 PM Saturday. Midnight UTC is 5 PM in Los
+    /// Angeles: the UTC day ends that evening, the week (from Monday) on
+    /// Sunday evening, the month on Sat 31 Oct.
+    @Test("spend from a UTC day, week or month that has since ended shows a dash until a new answer")
+    func staleSpend() throws {
+        func spend(at time: String) throws -> [String] {
+            try texts(#require(try snapshot("openrouter-limit", at: date(time))["openrouter"])).filter { !$0.hasPrefix("Key limit") }
+        }
+        #expect(try spend(at: "2026-10-10T16:59:00-07:00") == ["Today $0.85", "This week $4.20", "This month $7.60"])
+        #expect(try spend(at: "2026-10-10T17:00:00-07:00") == ["Today —", "This week $4.20", "This month $7.60"])
+        #expect(try spend(at: "2026-10-11T17:00:00-07:00") == ["Today —", "This week —", "This month $7.60"])
+        #expect(try spend(at: "2026-10-31T17:00:00-07:00") == ["Today —", "This week —", "This month —"])
+    }
+
+    /// A day later the resets are 24 hours later in absolute time; the
+    /// monthly ones cross the end of daylight saving on Sun 1 Nov, so
+    /// midnight UTC reads 4 PM.
+    @Test("a rebased fixture keeps the readings where they sat")
+    func rebased() throws {
+        let fixture = try loadFixture("openrouter-budgets")
+        let later = fixture.now + 86400
+        let section = try #require(UsageEngine.snapshot(from: fixture.readings(rebasedTo: later), now: later, timeZone: fixture.timeZone)["openrouter"])
+        #expect(section.updatedText == "Updated 2 min ago")
+        #expect(texts(section).prefix(3) == [
+            "Key limit $12.40 left of $20 · Resets Sun 4:00 PM",
+            "Daily key budget 92% · Resets in 2h 20m (5:00 PM) · $9.20 of $10 spent",
+            "Monthly workspace budget 30% · Resets Sun 4:00 PM · $61.50 of $200 spent",
+        ])
+    }
+
+    @Test("budgets count toward OpenRouter's part of the menu bar when it's shown there")
+    func menuBar() throws {
+        let fixture = try loadFixture("openrouter-budgets")
+        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone,
+                                            selection: ProviderSelection(enabled: ["openrouter"], menuBar: ["openrouter"]))
+        #expect(snapshot.menuBar.text == "⊛ 92%")
+    }
 }
 
 @Suite("OpenRouter budget alerts")
