@@ -37,6 +37,24 @@ struct FixtureTests {
         #expect(snapshot.menuBar.text == "✳ 42% · ⌘ 13%")
     }
 
+    @Test("a fixture can say which providers are on and in the menu bar")
+    func selection() throws {
+        let json = """
+        { "now": "2026-10-10T14:40:00-07:00", "readings": {}, "providers": { "enabled": ["codex"], "menuBar": [] } }
+        """
+        let fixture = try Fixture.decode(Data(json.utf8))
+        #expect(fixture.selection == ProviderSelection(enabled: ["codex"], menuBar: []))
+        #expect(try loadFixture("sample").selection == nil)
+    }
+
+    @Test("a malformed providers block reads as every provider on")
+    func badSelection() throws {
+        let json = """
+        { "now": "2026-10-10T14:40:00-07:00", "readings": {}, "providers": { "enabled": "codex" } }
+        """
+        #expect(try Fixture.decode(Data(json.utf8)).selection == nil)
+    }
+
     @Test("a service whose block is malformed shows dashes; the other still shows")
     func malformedService() throws {
         let json = """

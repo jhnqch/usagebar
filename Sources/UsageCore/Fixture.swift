@@ -7,6 +7,9 @@ public struct Fixture: Equatable, Sendable {
     public var now: Date
     public var timeZone: TimeZone
     public var readings: Readings
+    /// Which providers are on and in the menu bar, as the Providers menu
+    /// would set them; nil for every provider on and in the menu bar.
+    public var selection: ProviderSelection? = nil
 
     /// The readings shifted so they sit relative to `newNow` exactly as they
     /// sat relative to `now` when recorded. Lets the app show a sample that
@@ -22,7 +25,8 @@ public struct Fixture: Equatable, Sendable {
         return Fixture(
             now: raw.now,
             timeZone: raw.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current,
-            readings: raw.readings
+            readings: raw.readings,
+            selection: raw.providers?.value.map { ProviderSelection(enabled: $0.enabled, menuBar: Set($0.menuBar ?? $0.enabled)) }
         )
     }
 
@@ -30,5 +34,12 @@ public struct Fixture: Equatable, Sendable {
         var now: Date
         var timeZone: String?
         var readings: Readings
+        var providers: Lenient<Providers>?
+    }
+
+    private struct Providers: Decodable {
+        var enabled: [String]
+        /// Defaults to every provider that's on.
+        var menuBar: [String]?
     }
 }

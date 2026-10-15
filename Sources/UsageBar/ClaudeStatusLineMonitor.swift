@@ -12,6 +12,7 @@ final class ClaudeStatusLineMonitor {
     private let file: URL
     private var source: DispatchSourceFileSystemObject?
     private var lastLimits: ClaudeLimits?
+    private var running = false
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "claude-status-line")
 
     static let defaultFile = ClaudeStatusLine
@@ -24,17 +25,25 @@ final class ClaudeStatusLineMonitor {
     }
 
     func start() {
+        guard !running else { return }
+        running = true
         watch()
         read()
     }
 
     func refresh() {
+        guard running else { return }
         // The directory may have been created or replaced since the last watch.
         if source == nil { watch() }
         read()
     }
 
     func stop() {
+        running = false
+        unwatch()
+    }
+
+    private func unwatch() {
         source?.cancel()
         source = nil
     }
@@ -55,10 +64,10 @@ final class ClaudeStatusLineMonitor {
         source.setEventHandler { [weak self, weak source] in
             let directoryGone = source.map { !$0.data.isDisjoint(with: [.delete, .rename]) } ?? false
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self, self.running else { return }
                 if directoryGone {
                     // Watch the new directory instead of the old one.
-                    self.stop()
+                    self.unwatch()
                     self.watch()
                 }
                 self.read()

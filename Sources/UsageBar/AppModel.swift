@@ -14,15 +14,64 @@ final class AppModel {
     @ObservationIgnored var onAlertMemoryChange: ((AlertMemory) -> Void)?
     /// Alerts to post.
     @ObservationIgnored var onAlerts: (([LimitAlert]) -> Void)?
+    /// Which providers are on changed: start or stop their monitors.
+    @ObservationIgnored var onSelectionChange: ((ProviderSelection) -> Void)?
+    /// The Providers menu's rows.
+    private(set) var providerItems: [ProviderMenuItem] = []
+    private(set) var selection: ProviderSelection
     @ObservationIgnored private var readings: Readings
     @ObservationIgnored private var alertMemory: AlertMemory
+    @ObservationIgnored private var settings: ProviderSettings
+    @ObservationIgnored private var detected: Set<String>
+    @ObservationIgnored private let environment: ProviderEnvironment
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
     /// Alerts wait for the first `refresh()`, once something can post them.
-    init(readings: Readings, alertMemory: AlertMemory = AlertMemory()) {
+    init(readings: Readings, alertMemory: AlertMemory = AlertMemory(), environment: ProviderEnvironment = .live) {
         self.readings = readings
         self.alertMemory = alertMemory
-        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory)
+        self.environment = environment
+        let settings = ProviderSettings(loadingFrom: environment.defaults, catalog: BuiltInProviders.catalog)
+        let detected = environment.detect()
+        let selection = settings.selection(BuiltInProviders.catalog, detected: detected)
+        self.settings = settings
+        self.detected = detected
+        self.selection = selection
+        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory, selection: selection)
+        providerItems = settings.menuItems(BuiltInProviders.catalog, detected: detected)
+    }
+
+    /// Turns a provider on or off from the Providers menu.
+    func setEnabled(_ isOn: Bool, for id: String) {
+        settings.setEnabled(isOn, for: id)
+        settingsChanged()
+    }
+
+    /// Shows or hides a provider's menu bar part from the Providers menu.
+    func setInMenuBar(_ isOn: Bool, for id: String) {
+        settings.setInMenuBar(isOn, for: id)
+        settingsChanged()
+    }
+
+    /// Looks for newly installed or removed providers, e.g. when the
+    /// popover opens.
+    func detectProviders() {
+        let found = environment.detect()
+        guard found != detected else { return }
+        detected = found
+        settingsChanged(save: false)
+    }
+
+    private func settingsChanged(save: Bool = true) {
+        if save {
+            settings.save(to: environment.defaults)
+        }
+        providerItems = settings.menuItems(BuiltInProviders.catalog, detected: detected)
+        let updated = settings.selection(BuiltInProviders.catalog, detected: detected)
+        guard updated != selection else { return }
+        selection = updated
+        onSelectionChange?(selection)
+        refresh()
     }
 
     /// Changes the readings of the provider of type `P` and, if they
@@ -37,7 +86,7 @@ final class AppModel {
 
     /// Recomputes the snapshot against the current clock, and posts any alerts.
     func refresh() {
-        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory)
+        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory, selection: selection)
         if snapshot.alertMemory != alertMemory {
             alertMemory = snapshot.alertMemory
             onAlertMemoryChange?(alertMemory)
@@ -56,6 +105,24 @@ final class AppModel {
                 try? await Task.sleep(for: interval)
                 self?.refresh()
             }
+        }
+    }
+}
+
+/// Where provider detection and settings come from: the real file system
+/// and `UserDefaults` in the app.
+struct ProviderEnvironment {
+    var defaults: any KeyValueStore
+    var detect: () -> Set<String>
+
+    static var live: ProviderEnvironment {
+        ProviderEnvironment(defaults: UserDefaults.standard) {
+            ProviderDetection.detected(
+                BuiltInProviders.catalog,
+                fileSystem: FileManager.default,
+                home: FileManager.default.homeDirectoryForCurrentUser.path,
+                environment: ProcessInfo.processInfo.environment
+            )
         }
     }
 }

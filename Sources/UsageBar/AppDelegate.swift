@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let popover = NSPopover()
     private let popoverFit = PopoverFit()
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "menu-bar")
+    /// The providers whose monitors are running.
+    private var running: Set<String> = []
 
     init(model: AppModel) {
         self.model = model
@@ -38,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
 
         let host = NSHostingController(rootView: PopoverHost(model: model, fit: popoverFit) { [weak self] in self?.refresh(force: true) })
+        model.onSelectionChange = { [weak self] selection in self?.run(selection) }
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
         popover.behavior = .transient
@@ -55,11 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier.onOpen = { [weak self] in self?.showPopover() }
         model.refresh()
         model.startTicking()
-        claudeStatusLine.start()
-        claudeUsage.start()
-        claudeUsageLog.start()
-        codexUsageLog.start()
-        codex.start()
+        run(model.selection)
 
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
@@ -79,14 +78,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         // No orphaned app-server after quitting.
-        codex.stop()
-        claudeStatusLine.stop()
-        claudeUsage.stop()
-        claudeUsageLog.stop()
-        codexUsageLog.stop()
+        run(ProviderSelection(enabled: [], menuBar: []))
     }
 
+    /// Starts the monitors of the providers that are on and stops the rest:
+    /// a provider that's off runs no app-server, polls nothing and never
+    /// reads the Keychain.
+    private func run(_ selection: ProviderSelection) {
+        let wanted = Set(selection.enabled)
+        for id in running.subtracting(wanted) {
+            log.info("stopping \(id, privacy: .public)")
+            switch id {
+            case ClaudeProvider.info.id:
+                claudeStatusLine.stop()
+                claudeUsage.stop()
+                claudeUsageLog.stop()
+            case CodexProvider.info.id:
+                codex.stop()
+                codexUsageLog.stop()
+            default: break
+            }
+        }
+        for id in wanted.subtracting(running) {
+            log.info("starting \(id, privacy: .public)")
+            switch id {
+            case ClaudeProvider.info.id:
+                claudeStatusLine.start()
+                claudeUsage.start()
+                claudeUsageLog.start()
+            case CodexProvider.info.id:
+                codex.start()
+                codexUsageLog.start()
+            default: break
+            }
+        }
+        running = wanted
+    }
+
+    /// Stopped monitors ignore their refresh.
     private func refresh(force: Bool) {
+        model.detectProviders()
         model.refresh()
         claudeStatusLine.refresh()
         // Even Refresh asks the rate-limited usage endpoint at most once a minute.
@@ -101,6 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log.info("menu bar: \(label.text, privacy: .public)")
         }
         statusItem?.button?.attributedTitle = MenuBarText.attributed(label)
+        // With no part to show, a neutral icon keeps the status item clickable.
+        statusItem?.button?.image = label.parts.isEmpty ? MenuBarText.neutralIcon : nil
         statusItem?.button?.setAccessibilityLabel(MenuBarText.accessibilityLabel(label))
     }
 
@@ -141,6 +174,12 @@ private struct PopoverHost: View {
         PopoverView(
             snapshot: model.snapshot,
             height: .capped(fit.maxHeight),
+            onShowProviders: {
+                ProvidersMenu.make(model.providerItems, actions: ProvidersMenu.Actions(
+                    setEnabled: { model.setEnabled($0, for: $1) },
+                    setInMenuBar: { model.setInMenuBar($0, for: $1) }
+                )).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+            },
             onRefresh: onRefresh,
             onQuit: { NSApp.terminate(nil) }
         )

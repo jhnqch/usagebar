@@ -19,6 +19,9 @@ final class ClaudeUsageMonitor {
     private var token: String?
     private var inFlight = false
     private var loop: Task<Void, Never>?
+    /// Between `start()` and `stop()`. While stopped (Claude turned off)
+    /// nothing reads the Keychain or asks the endpoint.
+    private var running = false
     private let session: URLSession
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "claude-usage")
 
@@ -37,6 +40,7 @@ final class ClaudeUsageMonitor {
     }
 
     func start() {
+        running = true
         loop?.cancel()
         loop = Task { [weak self] in
             while !Task.isCancelled {
@@ -49,17 +53,22 @@ final class ClaudeUsageMonitor {
     /// Opening the popover, Refresh or waking from sleep: polls if it's been
     /// a minute, unless backing off.
     func refresh() {
+        guard running else { return }
         Task { await poll(.popover) }
     }
 
+    /// Stops polling and forgets the token. A poll under way is cancelled
+    /// and its answer dropped; `start()` begins again.
     func stop() {
+        running = false
         loop?.cancel()
         loop = nil
-        session.invalidateAndCancel()
+        token = nil
+        session.getAllTasks { tasks in tasks.forEach { $0.cancel() } }
     }
 
     private func poll(_ trigger: ClaudeUsagePolling.Trigger) async {
-        guard !inFlight, polling.isDue(trigger, at: Date()) else { return }
+        guard running, !inFlight, polling.isDue(trigger, at: Date()) else { return }
         inFlight = true
         defer { inFlight = false }
         polling.start(at: Date())
@@ -67,7 +76,13 @@ final class ClaudeUsageMonitor {
         if token == nil {
             token = await Self.readToken()
         }
+        // Turned off while the Keychain answered.
+        guard running else {
+            token = nil
+            return
+        }
         let outcome: ClaudeUsagePolling.Outcome = if let token { await fetch(token) } else { .noCredentials }
+        guard running else { return }
         let finished = polling.finish(outcome, at: Date())
         if finished.rereadToken {
             token = nil

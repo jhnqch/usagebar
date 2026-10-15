@@ -44,7 +44,7 @@ final class UsageLogMonitor<Parser: UsageLogParser, Owner: Provider> {
 
     /// Opening the popover, Refresh or waking from sleep.
     func refresh() {
-        guard Date().timeIntervalSince(lastScan) >= Self.minimumGap else { return }
+        guard loop != nil, Date().timeIntervalSince(lastScan) >= Self.minimumGap else { return }
         Task { await scan() }
     }
 
@@ -60,6 +60,8 @@ final class UsageLogMonitor<Parser: UsageLogParser, Owner: Provider> {
         lastScan = Date()
         let started = ContinuousClock.now
         let entries = await reader.scan(since: Date() - Self.lookback)
+        // Stopped (its provider turned off) while scanning.
+        guard loop != nil else { return }
         log.info("\(self.name, privacy: .public) logs: \(entries.count, privacy: .public) entries in \(String(describing: ContinuousClock.now - started), privacy: .public)")
         let usage = usage
         model.update(Owner.self) { $0[keyPath: usage] = entries }

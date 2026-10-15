@@ -16,7 +16,21 @@ enum SnapshotMode {
     static func render(fixturePath: String, outputPath: String, screenHeight: CGFloat? = nil) throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
         let fixture = try Fixture.decode(data)
-        let snapshot = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        let snapshot = UsageEngine.snapshot(
+            from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone, selection: fixture.selection
+        )
+
+        // The Providers menu as the app would build it for this fixture,
+        // with the fixture's providers on and taken as detected.
+        let detected = Set(fixture.selection?.enabled ?? BuiltInProviders.catalog.map(\.id))
+        var settings = ProviderSettings()
+        for info in BuiltInProviders.catalog where fixture.selection.map({ !$0.menuBar.contains(info.id) }) ?? false {
+            settings.setInMenuBar(false, for: info.id)
+        }
+        let menu = ProvidersMenu.make(
+            settings.menuItems(BuiltInProviders.catalog, detected: detected), actions: .init(setEnabled: { _, _ in }, setInMenuBar: { _, _ in })
+        )
+        print("Providers menu:\n" + ProvidersMenu.describe(menu))
 
         let scene: AnyView
         if let screenHeight {
@@ -122,12 +136,16 @@ private struct SnapshotScene: View {
         .background(palette.wall)
     }
 
+    /// The status item's title from the same runs the app styles, or the
+    /// neutral icon when there are none.
     private var menuBarText: Text {
         let palette = Palette(scheme)
-        return snapshot.menuBar.parts.enumerated().reduce(Text("")) { text, element in
-            let (index, part) = element
-            let value = Text(part.value.text).foregroundStyle(palette.text(part.value.level))
-            return Text("\(text)\(index == 0 ? "" : " · ")\(part.symbol) \(value)")
+        if snapshot.menuBar.runs.isEmpty {
+            return Text(Image(systemName: "gauge.with.dots.needle.33percent"))
+        }
+        return snapshot.menuBar.runs.reduce(Text("")) { text, run in
+            let piece = run.level.map { Text(run.text).foregroundStyle(palette.text($0)) } ?? Text(run.text)
+            return Text("\(text)\(piece)")
         }
     }
 }

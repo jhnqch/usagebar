@@ -30,6 +30,7 @@ final class CodexMonitor {
     }
 
     func start() {
+        guard loop == nil else { return }
         appServer.onReading = { [weak model] limits in
             model?.update(CodexProvider.self) { $0.appServer = limits }
         }
@@ -50,6 +51,7 @@ final class CodexMonitor {
     /// Reads both sources now. Without `force`, app-server is read at most
     /// once a minute (opening the popover, waking from sleep).
     func refresh(force: Bool) {
+        guard loop != nil else { return }
         if force || Date().timeIntervalSince(lastRead) >= Self.minimumReadGap {
             read()
         }
@@ -58,6 +60,7 @@ final class CodexMonitor {
 
     func stop() {
         loop?.cancel()
+        loop = nil
         appServer.stop()
     }
 
@@ -68,6 +71,8 @@ final class CodexMonitor {
 
     private func scanSessionLog() async {
         let limits = await sessionLog.latest()
+        // Stopped (Codex turned off) while scanning.
+        guard loop != nil else { return }
         if limits != lastSessionLog {
             lastSessionLog = limits
             log.info("Codex limits from session log: \(limits?.windows.map { "\($0.windowMinutes)m" } ?? [], privacy: .public)")

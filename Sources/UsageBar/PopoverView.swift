@@ -5,6 +5,7 @@ import UsageCore
 struct PopoverView: View {
     var snapshot: UsageSnapshot
     var height: Height = .full
+    var onShowProviders: () -> Void = {}
     var onRefresh: () -> Void = {}
     var onQuit: () -> Void = {}
 
@@ -39,7 +40,7 @@ struct PopoverView: View {
                 }
                 .clipped()
             }
-            FooterView(onRefresh: onRefresh, onQuit: onQuit)
+            FooterView(onShowProviders: onShowProviders, onRefresh: onRefresh, onQuit: onQuit)
                 .padding(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
         }
         .frame(width: 340)
@@ -57,6 +58,9 @@ struct PopoverView: View {
 
     private var sections: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if let empty = snapshot.emptyText {
+                EmptyStateView(text: empty)
+            }
             ForEach(Array(snapshot.sections.enumerated()), id: \.element.id) { index, section in
                 if index > 0 {
                     Rectangle().fill(Palette(scheme).divider).frame(height: 1)
@@ -335,7 +339,50 @@ private struct DayColumn: View {
     }
 }
 
+/// What the popover shows when no provider is on.
+private struct EmptyStateView: View {
+    var text: String
+
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let palette = Palette(scheme)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: 12, weight: .semibold))
+                Text("No providers").font(.system(size: 13, weight: .semibold))
+            }
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// The footer's Providers button: pops up the Providers menu
+/// (`ProvidersMenu`) under the pointer.
+private struct ProvidersButton: View {
+    var onShow: () -> Void
+
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: onShow) {
+            HStack(spacing: 4) {
+                Text("Providers")
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Providers")
+    }
+}
+
 private struct FooterView: View {
+    var onShowProviders: () -> Void
     var onRefresh: () -> Void
     var onQuit: () -> Void
 
@@ -355,6 +402,7 @@ private struct FooterView: View {
                 .contentShape(Rectangle())
             }
             .keyboardShortcut("r")
+            ProvidersButton(onShow: onShowProviders)
             Spacer()
             Button(action: onQuit) {
                 Text("Quit")
