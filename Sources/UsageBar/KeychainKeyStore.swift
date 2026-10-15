@@ -46,8 +46,12 @@ struct KeychainKeyStore: KeyStore {
         return status == errSecSuccess || status == errSecInteractionNotAllowed
     }
 
+    /// Replaces a saved key in place, so a failed save leaves the old one;
+    /// adds the item only when there's none.
     func save(_ key: String, for id: String) throws {
-        try removeKey(for: id)
+        let update = SecItemUpdate(query(id) as CFDictionary, [kSecValueData as String: Data(key.utf8)] as CFDictionary)
+        if update == errSecSuccess { return }
+        guard update == errSecItemNotFound else { throw Failure(status: update) }
         var item = query(id)
         item[kSecValueData as String] = Data(key.utf8)
         item[kSecAttrLabel as String] = "UsageBar API key (\(id))"
