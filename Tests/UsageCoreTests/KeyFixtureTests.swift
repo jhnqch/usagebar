@@ -103,6 +103,11 @@ struct KeyFixtureTests {
             // DeepSeek and Moonshot keys are "sk-" and a long run of letters
             // and digits.
             #expect(text.firstMatch(of: /sk-[A-Za-z0-9]{20,}/) == nil, "\(url.lastPathComponent) contains an sk- key")
+            // GitHub tokens: classic and OAuth ("ghp_", "gho_", "ghu_",
+            // "ghs_", "ghr_" and 36 letters and digits) and fine-grained
+            // ("github_pat_").
+            #expect(text.firstMatch(of: /gh[pousr]_[A-Za-z0-9]{20,}/) == nil, "\(url.lastPathComponent) contains a GitHub token")
+            #expect(text.firstMatch(of: /github_pat_[A-Za-z0-9_]{20,}/) == nil, "\(url.lastPathComponent) contains a GitHub token")
             // z.ai and BigModel keys are "<32 hex>.<secret>".
             #expect(text.firstMatch(of: /[0-9a-f]{32}\.[A-Za-z0-9]{8,}/) == nil, "\(url.lastPathComponent) contains a z.ai key")
         }
