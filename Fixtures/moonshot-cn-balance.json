@@ -1,0 +1,20 @@
+{
+  "_comment": "Synthetic: the documented GET https://api.moonshot.cn/v1/users/me/balance response (platform.kimi.com/docs/api/balance), not recorded from a real key. The China platform's amounts are in yuan (CNY); here cash is negative (owed), so available equals the voucher balance.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "moonshot-cn": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "code": 0,
+          "data": { "available_balance": "18.5", "voucher_balance": "18.5", "cash_balance": "-2.75" },
+          "scode": "0x0",
+          "status": true
+        }
+      }
+    ]
+  },
+  "providers": { "enabled": ["moonshot-cn"], "menuBar": [] }
+}

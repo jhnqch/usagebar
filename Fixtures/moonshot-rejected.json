@@ -1,0 +1,20 @@
+{
+  "_comment": "The 401 body is what api.moonshot.ai/v1/users/me/balance answered on 2026-10-14 to a made-up key; api.moonshot.cn answered the same. The 200 before it is synthetic.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "moonshot": [
+      {
+        "receivedAt": "2026-10-10T14:00:00-07:00",
+        "status": 200,
+        "body": { "code": 0, "data": { "available_balance": 49.58894, "voucher_balance": 46.58893, "cash_balance": 3.00001 }, "scode": "0x0", "status": true }
+      },
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 401,
+        "body": { "error": { "message": "Invalid Authentication", "type": "invalid_authentication_error" } }
+      }
+    ]
+  },
+  "providers": { "enabled": ["moonshot"], "menuBar": [] }
+}

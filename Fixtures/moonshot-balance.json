@@ -1,0 +1,20 @@
+{
+  "_comment": "Synthetic: the documented GET https://api.moonshot.ai/v1/users/me/balance response (platform.kimi.ai/docs/api/balance), not recorded from a real key. The international platform's amounts are in USD.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "moonshot": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "code": 0,
+          "data": { "available_balance": 49.58894, "voucher_balance": 46.58893, "cash_balance": 3.00001 },
+          "scode": "0x0",
+          "status": true
+        }
+      }
+    ]
+  },
+  "providers": { "enabled": ["moonshot"], "menuBar": [] }
+}
