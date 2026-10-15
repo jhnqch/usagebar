@@ -26,9 +26,10 @@ import Foundation
 ///   `key_limit` budget repeats the key's limit, already shown as the
 ///   credit meter, so it's left out. A budget that never resets has no
 ///   window to pace or alert on, so it's a credit meter instead.
-/// - `is_free_tier` shows the plan badge "Free" and, from
-///   `free_model_daily_requests`, the free-model requests left this UTC
-///   day (with no credit bought, that's all the key can use).
+/// - `is_free_tier` shows the plan badge "Free". `free_model_daily_requests`
+///   shows the free-model requests left this UTC day on a free-tier key, or
+///   on any key that used some today (OpenRouter sets the ceiling apart
+///   from `is_free_tier`).
 public enum OpenRouterAPI: KeyAPI {
     public static let id = "openrouter"
     public static let name = "OpenRouter"
@@ -133,6 +134,9 @@ public enum OpenRouterAPI: KeyAPI {
         let limit = number(entry["limit_usd"])
         let spent = number(entry["spend_usd"]) ?? number(entry["remaining_usd"]).flatMap { remaining in limit.map { $0 - remaining } }
         let resetsAt = (entry["resets_at"] as? String).flatMap(date) ?? interval.flatMap { nextReset(after: receivedAt, interval: $0) }
+        // An entry with nothing it recognises (every field renamed) is no
+        // budget, rather than a row of dashes.
+        guard limit != nil || spent != nil || resetsAt != nil || interval != nil else { return nil }
         let budgetID = [entry["budget_id"], entry["guardrail_id"]].lazy.compactMap { $0 as? String }.first { !$0.isEmpty }
         return Budget(scope: scope, budgetID: budgetID, interval: interval, limit: limit, spent: spent, resetsAt: resetsAt,
                       minutes: resetsAt.map { windowMinutes(interval, endingAt: $0) })
@@ -153,7 +157,11 @@ public enum OpenRouterAPI: KeyAPI {
         for budget in reading?.budgets ?? [] {
             rows.append(row(budget, ids: &ids, clock: clock))
         }
-        if let reading, reading.isFreeTier == true {
+        // The daily free-model ceiling is set apart from is_free_tier, so
+        // the row shows on a free-tier key, or on any key that used free
+        // models today.
+        if let reading, reading.isFreeTier == true
+            || reading.freeRequestsLeft.flatMap({ left in reading.freeRequestsLimit.map { left < $0 } }) == true {
             let requests = Amount.Unit.count("")
             rows.append(.credit(CreditRow(
                 id: "openrouter.freeRequests", label: "Free requests",

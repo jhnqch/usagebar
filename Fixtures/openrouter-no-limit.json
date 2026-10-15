@@ -26,9 +26,9 @@
             "byok_usage_monthly": 0,
             "is_free_tier": false,
             "free_model_daily_requests": {
-              "used": 3,
+              "used": 0,
               "limit": 1000,
-              "remaining": 997
+              "remaining": 1000
             },
             "rate_limit": {
               "requests": -1,

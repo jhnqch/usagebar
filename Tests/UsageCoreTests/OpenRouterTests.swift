@@ -210,6 +210,28 @@ struct OpenRouterTests {
         }
         #expect(elapsed == ["90% of window elapsed", "32% of window elapsed"])
     }
+
+    /// OpenRouter picks the daily free-model ceiling apart from
+    /// is_free_tier: an account can say false and still have 50 a day.
+    @Test("a paid key that used free models today shows its free requests left, without the Free badge")
+    func freeRequestsOnPaidKey() throws {
+        let used = try #require(try snapshot(data: """
+            { "limit": null, "is_free_tier": false, "free_model_daily_requests": { "used": 12, "limit": 50, "remaining": 38 } }
+            """)["openrouter"])
+        #expect(used.plan == nil)
+        #expect(texts(used).first == "Free requests 38 left of 50 · Resets in 2h 20m (5:00 PM)")
+        let unused = try #require(try snapshot(data: """
+            { "limit": null, "is_free_tier": false, "free_model_daily_requests": { "used": 0, "limit": 1000, "remaining": 1000 } }
+            """)["openrouter"])
+        #expect(texts(unused) == ["Today —", "This week —", "This month —"])
+    }
+
+    @Test("a budget with no field it recognises is dropped, not shown as a dash")
+    func unreadableBudget() throws {
+        let section = try #require(try snapshot(data: #"{ "budgets": [{ "renamed": 1 }, { "scope": "member" }] }"#)["openrouter"])
+        #expect(texts(section) == ["Today —", "This week —", "This month —"])
+        #expect(section.note == "Couldn't read the answer from openrouter.ai")
+    }
 }
 
 @Suite("OpenRouter budget alerts")
