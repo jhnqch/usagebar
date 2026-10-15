@@ -38,10 +38,15 @@ public enum ExampleKeyAPI: KeyAPI {
     public static func reading(fromResponse body: Data, receivedAt: Date) -> Reading? {
         guard let root = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
               let data = root["data"] as? [String: Any] else { return nil }
+        // An amount without a readable currency is no reading, not dollars.
         let credit = data["credit"] as? [String: Any] ?? [:]
-        let creditCurrency = credit["currency"] as? String ?? "USD"
+        let creditCurrency = credit["currency"] as? String
         let spend = data["spend"] as? [String: Any] ?? [:]
-        let spendCurrency = spend["currency"] as? String ?? "USD"
+        let spendCurrency = spend["currency"] as? String
+        func amount(_ value: Any?, _ currency: String?) -> Amount? {
+            guard let currency, let number = number(value) else { return nil }
+            return Amount(number, .currency(currency))
+        }
         // Each entry on its own: a malformed one drops only itself.
         let balances = (data["balances"] as? [Any] ?? []).compactMap { element -> Amount? in
             guard let entry = element as? [String: Any],
@@ -50,11 +55,11 @@ public enum ExampleKeyAPI: KeyAPI {
         }
         let reading = Reading(
             plan: data["plan"] as? String,
-            creditLeft: number(credit["remaining"]).map { Amount($0, .currency(creditCurrency)) },
-            creditLimit: number(credit["limit"]).map { Amount($0, .currency(creditCurrency)) },
+            creditLeft: amount(credit["remaining"], creditCurrency),
+            creditLimit: amount(credit["limit"], creditCurrency),
             creditResetsAt: (credit["resets_at"] as? String).flatMap { try? Date($0, strategy: .iso8601) },
-            spentToday: number(spend["today"]).map { Amount($0, .currency(spendCurrency)) },
-            spentThisMonth: number(spend["this_month"]).map { Amount($0, .currency(spendCurrency)) },
+            spentToday: amount(spend["today"], spendCurrency),
+            spentThisMonth: amount(spend["this_month"], spendCurrency),
             balances: balances
         )
         let empty = Reading(balances: [])

@@ -51,13 +51,26 @@ struct KeyFixtureTests {
         let json = """
         { "now": "2026-10-10T14:40:00-07:00", "timeZone": "America/Los_Angeles", "readings": { "example": [
           { "receivedAt": "2026-10-10T14:40:00-07:00", "status": 200,
-            "body": { "data": { "credit": { "remaining": "lots", "limit": 20 }, "spend": { "today": null, "this_month": 3.1 },
+            "body": { "data": { "credit": { "remaining": "lots", "limit": 20 }, "spend": { "today": null, "this_month": 3.1, "currency": "USD" },
                                 "balances": [{ "currency": "CNY" }, null, 7, { "currency": "USD", "amount": "1.5" }] } } }
         ] } }
         """
         let fixture = try Fixture.decode(Data(json.utf8))
         let section = try #require(UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)["example"])
         #expect(texts(section) == ["Credit —", "Today —", "This month $3.10", "Balance $1.50"])
+    }
+
+    @Test("an amount whose currency is missing shows a dash rather than guessing dollars")
+    func missingCurrency() throws {
+        let json = """
+        { "now": "2026-10-10T14:40:00-07:00", "timeZone": "America/Los_Angeles", "readings": { "example": [
+          { "receivedAt": "2026-10-10T14:40:00-07:00", "status": 200,
+            "body": { "data": { "credit": { "remaining": 5, "limit": 20 }, "spend": { "today": 1, "this_month": 2, "currency": 7 } } } }
+        ] } }
+        """
+        let fixture = try Fixture.decode(Data(json.utf8))
+        let section = try #require(UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)["example"])
+        #expect(texts(section) == ["Credit —", "Today —", "This month —"])
     }
 
     @Test("fixtures without a key provider's answers show no section for it")
