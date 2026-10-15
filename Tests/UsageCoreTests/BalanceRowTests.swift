@@ -58,6 +58,16 @@ struct BalanceRowTests {
         #expect((0...1).contains(meter.fraction))
     }
 
+    @Test("credit whose reset has passed shows a dash and when it reset, not the old balance")
+    func creditPastReset() throws {
+        let section = try section(.credit(CreditRow(
+            id: "balance.credit", label: "Credit", left: Amount(0, .usd), of: Amount(20, .usd), resetsAt: date("2026-10-10T14:00:00-07:00")
+        )))
+        #expect(section.rows == [.credit(CreditMeter(
+            id: "balance.credit", label: "Credit", valueText: "—", fraction: 0, level: .normal, resetText: "Reset at 2:00 PM"
+        ))])
+    }
+
     @Test("a credit row with no reading shows a dash")
     func creditMissing() throws {
         let section = try section(.credit(CreditRow(id: "balance.credit", label: "Credit", left: nil, of: Amount(20, .usd))))

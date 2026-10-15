@@ -123,11 +123,18 @@ public enum UsageEngine {
 
     /// Credit as a meter of what's used. Without a total there's nothing to
     /// fill the bar against; with nothing left it's maxed.
+    ///
+    /// Once its reset has passed (the Mac slept through it, or the poll
+    /// since failed) the old balance no longer holds: it reads "—" and says
+    /// when it reset, until a new reading comes.
     private static func creditMeter(_ credit: CreditRow, clock: Clock) -> CreditMeter {
+        let resetText = credit.resetsAt.map { clock.resetText($0) }
+        if let resetsAt = credit.resetsAt, resetsAt <= clock.now {
+            return CreditMeter(id: credit.id, label: credit.label, valueText: "—", fraction: 0, level: .normal, resetText: resetText)
+        }
         guard let left = credit.left else {
             return CreditMeter(id: credit.id, label: credit.label, valueText: "—", fraction: 0, level: .normal)
         }
-        let resetText = credit.resetsAt.map { clock.resetText($0) }
         guard let total = credit.total, total.value > 0 else {
             return CreditMeter(id: credit.id, label: credit.label, valueText: "\(left.text) left", fraction: 0,
                                level: left.value <= 0 ? .maxed : .normal, resetText: resetText)
