@@ -34,12 +34,13 @@ public struct Readings: Equatable, Sendable {
 }
 
 extension Readings: Decodable {
-    /// Every built-in provider, each reading its own keys from the same
+    /// Every built-in provider (and the fixture-only example), each reading its own keys from the same
     /// object. Readings come from formats that can change without notice: a
     /// missing, renamed or mistyped field drops only the row it feeds (which
     /// then shows "—"); it never fails the whole readings file.
     public init(from decoder: any Decoder) throws {
-        self.init(BuiltInProviders.all.compactMap { try? $0.init(from: decoder) })
+        let types = BuiltInProviders.all + BuiltInProviders.fixtureOnly.map { $0.providerType }
+        self.init(types.compactMap { try? $0.init(from: decoder) })
     }
 }
 

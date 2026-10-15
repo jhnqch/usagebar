@@ -1,0 +1,29 @@
+{
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "codex": {
+      "plan": "pro",
+      "capturedAt": "2026-10-10T14:40:00-07:00",
+      "windows": [
+        { "usedPercent": 13, "windowMinutes": 10080, "resetsAt": "2026-10-15T13:16:00-07:00" }
+      ]
+    },
+    "example": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "data": {
+            "plan": "pay_as_you_go",
+            "credit": { "remaining": "12.40", "limit": 20, "currency": "USD", "resets_at": "2026-11-01T07:00:00Z" },
+            "spend": { "today": 0.85, "this_month": "3.10", "currency": "USD" },
+            "balances": [{ "currency": "CNY", "amount": "48.20" }],
+            "something_new": true
+          }
+        }
+      }
+    ]
+  },
+  "providers": { "enabled": ["codex", "example"], "menuBar": ["codex"] }
+}

@@ -1,0 +1,19 @@
+{
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "example": [
+      {
+        "receivedAt": "2026-10-10T14:00:00-07:00",
+        "status": 200,
+        "body": { "data": { "credit": { "remaining": "12.40", "limit": 20, "currency": "USD" } } }
+      },
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 401,
+        "body": { "error": { "message": "Invalid API key", "code": 401 } }
+      }
+    ]
+  },
+  "providers": { "enabled": ["example"], "menuBar": [] }
+}

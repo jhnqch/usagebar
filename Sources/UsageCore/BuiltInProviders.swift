@@ -1,9 +1,17 @@
 /// The providers UsageBar ships, in display order.
 public enum BuiltInProviders {
-    public static let all: [any Provider.Type] = [ClaudeProvider.self, CodexProvider.self]
+    public static let all: [any Provider.Type] = [ClaudeProvider.self, CodexProvider.self] + keyAPIs.map { $0.providerType }
+
+    /// The key providers UsageBar ships, in display order after `all`'s
+    /// others. A new one goes here and nowhere else.
+    public static let keyAPIs: [any KeyAPI.Type] = []
 
     /// What the Providers menu lists and detection checks, in display order.
-    public static let catalog: [ProviderInfo] = [ClaudeProvider.info, CodexProvider.info]
+    public static let catalog: [ProviderInfo] = [ClaudeProvider.info, CodexProvider.info] + keyAPIs.map { $0.info }
+
+    /// Providers only fixtures show: the example key provider, for tests and
+    /// snapshot evidence. Never listed, polled or detected.
+    public static let fixtureOnly: [any KeyAPI.Type] = [ExampleKeyAPI.self]
 }
 
 extension ClaudeProvider {
