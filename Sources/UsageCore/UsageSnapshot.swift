@@ -10,6 +10,9 @@ public struct UsageSnapshot: Equatable, Sendable {
     /// What has been alerted, including `alerts`: the next evaluation's
     /// input, saved between launches.
     public var alertMemory = AlertMemory()
+    /// What the popover says instead of sections when no provider is on;
+    /// nil otherwise.
+    public var emptyText: String? = nil
 
     /// The section of the provider with `id`, if it's shown.
     public subscript(id: String) -> ProviderSection? {
@@ -60,9 +63,32 @@ public struct MenuBarLabel: Equatable, Sendable {
         parts.map { "\($0.symbol) \($0.value.text)" }.joined(separator: " · ")
     }
 
-    /// What VoiceOver reads: "Usage. Claude 61%. Codex 13%."
+    /// The title in runs, left to right: symbols and separators plain, each
+    /// value coloured by its level. Empty when there are no parts, where
+    /// the status item shows a neutral icon instead.
+    public var runs: [Run] {
+        parts.enumerated().flatMap { index, part in
+            [Run(text: (index == 0 ? "" : " · ") + part.symbol + " ", level: nil), Run(text: part.value.text, level: part.value.level)]
+        }
+    }
+
+    /// A stretch of the title in one style.
+    public struct Run: Equatable, Sendable {
+        public var text: String
+        /// The level to colour it by; nil for plain text.
+        public var level: Level?
+
+        public init(text: String, level: Level?) {
+            self.text = text
+            self.level = level
+        }
+    }
+
+    /// What VoiceOver reads: "Usage. Claude 61%. Codex 13%.", or "Usage.
+    /// No providers on." for the neutral icon.
     public var accessibilityText: String {
-        (["Usage."] + parts.map { "\($0.name) \($0.value.text)." }).joined(separator: " ")
+        if parts.isEmpty { return "Usage. No providers on." }
+        return (["Usage."] + parts.map { "\($0.name) \($0.value.text)." }).joined(separator: " ")
     }
 
     /// The part of the provider with `id`, if it has one.

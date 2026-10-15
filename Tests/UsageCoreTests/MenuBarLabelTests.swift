@@ -28,6 +28,25 @@ struct MenuBarLabelTests {
         #expect(part.level == .normal)
     }
 
+    @Test("the status item's title runs: plain symbols and separators, each value coloured by its level")
+    func runs() {
+        let label = snapshot(claude: claude(fiveHour: 95, weekly: 61), codex: codex(weekly: 13)).menuBar
+        #expect(label.runs == [
+            .init(text: "✳ ", level: nil),
+            .init(text: "95%", level: .warning),
+            .init(text: " · ⌘ ", level: nil),
+            .init(text: "13%", level: .normal),
+        ])
+        #expect(label.runs.map(\.text).joined() == label.text)
+    }
+
+    @Test("with no parts, the title has no runs and the icon stands alone")
+    func noRuns() {
+        let label = MenuBarLabel(parts: [])
+        #expect(label.runs.isEmpty)
+        #expect(label.text == "")
+    }
+
     @Test("a service with no readings shows a dash")
     func noReadings() {
         #expect(snapshot(claude: claude()).menuBar.text == "✳ 61% · ⌘ —")

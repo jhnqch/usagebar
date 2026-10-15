@@ -38,6 +38,16 @@ public struct AlertMemory: Equatable, Sendable {
         public var resetAnnounced = false
     }
 
+    /// The cycles matching `belongs`, and the rest.
+    func partitioned(by belongs: (Cycle) -> Bool) -> (matching: [Cycle], rest: AlertMemory) {
+        (cycles.filter(belongs), AlertMemory(cycles: cycles.filter { !belongs($0) }))
+    }
+
+    /// This memory with `others` added after its own cycles.
+    func adding(_ others: [Cycle]) -> AlertMemory {
+        AlertMemory(cycles: cycles + others)
+    }
+
     /// The saved file's name in UsageBar's support directory.
     public static let fileName = "alerts.json"
 

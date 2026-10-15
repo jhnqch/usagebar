@@ -5,18 +5,24 @@ public enum UsageEngine {
     /// The snapshot at `now`. `alertMemory` is what earlier evaluations
     /// alerted; the snapshot carries the alerts to post now and the memory to
     /// pass next time.
+    ///
+    /// `selection` picks the providers shown and those with a menu bar part;
+    /// nil shows every provider with a part. A provider that's off neither
+    /// shows nor alerts, and what it alerted before is kept as it was.
     public static func snapshot(
         from readings: Readings,
         now: Date,
         timeZone: TimeZone,
-        alertMemory: AlertMemory = AlertMemory()
+        alertMemory: AlertMemory = AlertMemory(),
+        selection: ProviderSelection? = nil
     ) -> UsageSnapshot {
         let clock = Clock(now: now, timeZone: timeZone)
         var sections: [ProviderSection] = []
         var parts: [MenuBarLabel.Part] = []
         var alertWindows: [LimitAlerts.Window] = []
 
-        for provider in readings.providers {
+        let shown = readings.providers.filter { selection?.enabled.contains($0.id) ?? true }
+        for provider in shown {
             let report = provider.report(clock: clock)
             let windows = report.windows.map { $0.current(at: now) }
             let meters = windows.map { meter($0, clock: clock) }
@@ -27,7 +33,7 @@ public enum UsageEngine {
                 )
             }
             let labelWindows = windows.filter(\.inMenuBar)
-            if !labelWindows.isEmpty {
+            if !labelWindows.isEmpty, selection?.menuBar.contains(provider.id) ?? true {
                 parts.append(MenuBarLabel.Part(
                     id: provider.id, name: provider.name, symbol: provider.symbol,
                     value: labelPart(labelWindows.compactMap(\.reading), clock: clock)
@@ -46,14 +52,27 @@ public enum UsageEngine {
             ))
         }
 
-        let alerts = LimitAlerts.evaluate(alertWindows, memory: alertMemory, clock: clock)
+        // A provider that's off sits out: its cycles neither reset nor
+        // expire until it's back on.
+        let hidden = Set(readings.providers.map(\.id)).subtracting(shown.map(\.id))
+        let (asleep, awake) = alertMemory.partitioned { cycle in hidden.contains { cycle.window.hasPrefix("\($0).") } }
+        var alerts = LimitAlerts.evaluate(alertWindows, memory: awake, clock: clock)
+        alerts.memory = alerts.memory.adding(asleep)
         return UsageSnapshot(
             menuBar: MenuBarLabel(parts: parts),
             sections: sections,
             alerts: alerts.alerts,
-            alertMemory: alerts.memory
+            alertMemory: alerts.memory,
+            emptyText: sections.isEmpty ? emptyText : nil
         )
     }
+
+    /// What the popover says with no provider on.
+    static let emptyText = """
+        No providers are on. UsageBar shows Claude once Claude Code is set up (~/.claude) \
+        and Codex once Codex or the ChatGPT app is installed (~/.codex). \
+        Turn one on under Providers.
+        """
 
     /// Resets this close together belong to the same window. Two sources
     /// round them differently (Claude's endpoint says 06:59:59.82 where its
