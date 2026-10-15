@@ -197,6 +197,19 @@ struct OpenRouterTests {
         let section = try #require(UsageEngine.snapshot(from: fixture.readings(rebasedTo: later), now: later, timeZone: fixture.timeZone)["openrouter"])
         #expect(texts(section) == ["Free requests 38 left of 50 · Resets in 2h 20m (11:00 PM)", "Today $0", "This week $0", "This month $0"])
     }
+
+    /// 31 days earlier the monthly budget would end on 1 Oct, after a
+    /// 30-day September; it's still the 31-day window it was.
+    @Test("a rebased fixture keeps each budget's window length")
+    func rebasedWindowLength() throws {
+        let fixture = try loadFixture("openrouter-budgets")
+        let earlier = fixture.now - 31 * 86400
+        let section = try #require(UsageEngine.snapshot(from: fixture.readings(rebasedTo: earlier), now: earlier, timeZone: fixture.timeZone)["openrouter"])
+        let elapsed = section.rows.compactMap { row -> String? in
+            if case let .meter(meter) = row { meter.elapsedText } else { nil }
+        }
+        #expect(elapsed == ["90% of window elapsed", "32% of window elapsed"])
+    }
 }
 
 @Suite("OpenRouter budget alerts")

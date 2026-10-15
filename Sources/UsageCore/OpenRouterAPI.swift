@@ -80,6 +80,9 @@ public enum OpenRouterAPI: KeyAPI {
         /// `resets_at`, or without it the next midnight UTC `interval`
         /// names; nil when it never resets.
         public var resetsAt: Date?
+        /// The window's length, for pace: worked out once from the answer,
+        /// so a rebased fixture keeps it.
+        public var minutes: Int?
     }
 
     public static func reading(fromResponse body: Data, receivedAt: Date) -> Reading? {
@@ -131,7 +134,8 @@ public enum OpenRouterAPI: KeyAPI {
         let spent = number(entry["spend_usd"]) ?? number(entry["remaining_usd"]).flatMap { remaining in limit.map { $0 - remaining } }
         let resetsAt = (entry["resets_at"] as? String).flatMap(date) ?? interval.flatMap { nextReset(after: receivedAt, interval: $0) }
         let budgetID = [entry["budget_id"], entry["guardrail_id"]].lazy.compactMap { $0 as? String }.first { !$0.isEmpty }
-        return Budget(scope: scope, budgetID: budgetID, interval: interval, limit: limit, spent: spent, resetsAt: resetsAt)
+        return Budget(scope: scope, budgetID: budgetID, interval: interval, limit: limit, spent: spent, resetsAt: resetsAt,
+                      minutes: resetsAt.map { windowMinutes(interval, endingAt: $0) })
     }
 
     public static func report(_ reading: Reading?, clock: Clock) -> ProviderReport {
@@ -231,7 +235,7 @@ public enum OpenRouterAPI: KeyAPI {
         let usage = resetsAt <= clock.now ? nil
             : budget.limit.flatMap { limit in budget.spent.map { "\(dollars($0).text) of \(dollars(limit).text) spent" } }
         return .window(LimitWindow(
-            id: id, label: label, minutes: windowMinutes(budget.interval, endingAt: resetsAt), reading: reading,
+            id: id, label: label, minutes: budget.minutes ?? windowMinutes(budget.interval, endingAt: resetsAt), reading: reading,
             alertName: "OpenRouter \(name)", usageText: usage
         ))
     }
