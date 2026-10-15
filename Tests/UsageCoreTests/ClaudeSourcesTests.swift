@@ -22,7 +22,7 @@ struct ClaudeSourcesTests {
         )
     }
 
-    /// The status line JSON recorded for ticket #4 (5-hour 19%, weekly 11%, in
+    /// The recorded status line JSON (5-hour 19%, weekly 11%, in
     /// the same windows as the recorded response), as the command saves it
     /// when it runs at `time`.
     func recordedStatusLine(at time: Date) throws -> ClaudeLimits? {

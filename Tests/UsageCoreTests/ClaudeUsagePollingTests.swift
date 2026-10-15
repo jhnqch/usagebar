@@ -13,7 +13,7 @@ struct ClaudeUsagePollingTests {
         try Data(contentsOf: fixtureURL("claude/usage-response.json"))
     }
 
-    /// The status line recorded for ticket #4: 5-hour 19% and weekly 11%,
+    /// The recorded status line: 5-hour 19% and weekly 11%,
     /// in the same windows as the recorded response.
     func recordedStatusLine() throws -> ClaudeLimits? {
         let afterReply = try fixtureLines("claude/status-line.jsonl")[1]

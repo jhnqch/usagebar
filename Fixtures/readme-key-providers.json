@@ -1,0 +1,202 @@
+{
+  "_comment": "Synthetic: the README's key-provider screenshot. Each provider's readings are copied from its own synthetic fixture (openrouter-budgets, zai-quota, deepseek-balance, moonshot-balance), none recorded from a real key.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "openrouter": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "data": {
+            "label": "Synthetic demo key",
+            "limit": 20,
+            "limit_reset": "monthly",
+            "limit_remaining": 12.4,
+            "include_byok_in_limit": false,
+            "budgets": [
+              {
+                "scope": "key_limit",
+                "guardrail_id": null,
+                "budget_id": null,
+                "limit_usd": 20,
+                "spend_usd": 7.6,
+                "remaining_usd": 12.4,
+                "reset_interval": "monthly",
+                "resets_at": "2026-11-01T00:00:00.000Z",
+                "include_byok": false
+              },
+              {
+                "scope": "api_key",
+                "guardrail_id": "gr_synthetic_daily",
+                "budget_id": null,
+                "limit_usd": 10,
+                "spend_usd": 9.2,
+                "remaining_usd": 0.8,
+                "reset_interval": "daily",
+                "resets_at": "2026-10-11T00:00:00.000Z",
+                "include_byok": false
+              },
+              {
+                "scope": "workspace",
+                "guardrail_id": null,
+                "budget_id": "bud_synthetic_ws",
+                "limit_usd": 200,
+                "spend_usd": 61.5,
+                "remaining_usd": 138.5,
+                "reset_interval": "monthly",
+                "resets_at": "2026-11-01T00:00:00.000Z",
+                "include_byok": true
+              },
+              {
+                "scope": "member",
+                "guardrail_id": "gr_synthetic_member",
+                "budget_id": null,
+                "limit_usd": 50,
+                "spend_usd": 12,
+                "remaining_usd": 38,
+                "reset_interval": null,
+                "resets_at": null,
+                "include_byok": false
+              }
+            ],
+            "effective_budget": {
+              "scope": "api_key",
+              "guardrail_id": "gr_synthetic_daily",
+              "budget_id": null,
+              "limit_usd": 10,
+              "spend_usd": 9.2,
+              "remaining_usd": 0.8,
+              "reset_interval": "daily",
+              "resets_at": "2026-10-11T00:00:00.000Z",
+              "include_byok": false
+            },
+            "usage": 31.27,
+            "usage_daily": 0.85,
+            "usage_weekly": 4.2,
+            "usage_monthly": 7.6,
+            "byok_usage": 0,
+            "byok_usage_daily": 0,
+            "byok_usage_weekly": 0,
+            "byok_usage_monthly": 0,
+            "is_free_tier": false,
+            "free_model_daily_requests": {
+              "used": 0,
+              "limit": 1000,
+              "remaining": 1000
+            },
+            "rate_limit": {
+              "requests": -1,
+              "interval": "10s"
+            }
+          }
+        }
+      }
+    ],
+    "zai": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "code": 200,
+          "msg": "Operation successful",
+          "success": true,
+          "data": {
+            "limits": [
+              {
+                "type": "TOKENS_LIMIT",
+                "unit": 3,
+                "number": 5,
+                "percentage": 72,
+                "nextResetTime": 1791676680000
+              },
+              {
+                "type": "TOKENS_LIMIT",
+                "unit": 6,
+                "number": 1,
+                "percentage": 41,
+                "nextResetTime": 1791900000000
+              },
+              {
+                "type": "TIME_LIMIT",
+                "unit": 5,
+                "number": 1,
+                "usage": 1000,
+                "currentValue": 224,
+                "remaining": 776,
+                "percentage": 22,
+                "nextResetTime": 1793589300000,
+                "usageDetails": [
+                  {
+                    "modelCode": "search-prime",
+                    "usage": 210
+                  },
+                  {
+                    "modelCode": "web-reader",
+                    "usage": 14
+                  },
+                  {
+                    "modelCode": "zread",
+                    "usage": 0
+                  }
+                ]
+              }
+            ],
+            "level": "pro"
+          }
+        }
+      }
+    ],
+    "deepseek": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "is_available": true,
+          "balance_infos": [
+            {
+              "currency": "CNY",
+              "total_balance": "110.00",
+              "granted_balance": "10.00",
+              "topped_up_balance": "100.00"
+            },
+            {
+              "currency": "USD",
+              "total_balance": "4.25",
+              "granted_balance": "0.00",
+              "topped_up_balance": "4.25"
+            }
+          ]
+        }
+      }
+    ],
+    "moonshot": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "code": 0,
+          "data": {
+            "available_balance": 49.58894,
+            "voucher_balance": 46.58893,
+            "cash_balance": 3.00001
+          },
+          "scode": "0x0",
+          "status": true
+        }
+      }
+    ]
+  },
+  "providers": {
+    "enabled": [
+      "openrouter",
+      "deepseek",
+      "moonshot",
+      "zai"
+    ],
+    "menuBar": [
+      "openrouter",
+      "zai"
+    ]
+  }
+}

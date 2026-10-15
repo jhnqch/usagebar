@@ -21,6 +21,14 @@ struct KeyFixtureTests {
         }
     }
 
+    @Test("the README's key-provider screenshot shows four providers, with OpenRouter and z.ai in the menu bar")
+    func readme() throws {
+        let snapshot = try snapshot("readme-key-providers")
+        #expect(snapshot.sections.map(\.name) == ["OpenRouter", "DeepSeek", "Moonshot", "z.ai"])
+        #expect(snapshot.sections.allSatisfy { $0.note == nil })
+        #expect(snapshot.menuBar.text == "⊛ 92% · ℤ 72%")
+    }
+
     @Test("a recorded answer shows credit, spend and balance rows")
     func balance() throws {
         let snapshot = try snapshot("key-balance")
