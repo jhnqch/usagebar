@@ -148,6 +148,57 @@ final class GateTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
+/// Holds each key read until the test releases it, then answers with the
+/// key that was saved when the read began.
+final class GateKeyStore: KeyStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var keys: [String: String]
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var released = 0
+    private var count = 0
+    var reads: Int { lock.withLock { count } }
+
+    init(_ keys: [String: String]) {
+        self.keys = keys
+    }
+
+    func key(for id: String) async throws -> String? {
+        let value = lock.withLock { () -> String? in
+            count += 1
+            return keys[id]
+        }
+        await withCheckedContinuation { continuation in
+            let resumeNow = lock.withLock { () -> Bool in
+                if released > 0 {
+                    released -= 1
+                    return true
+                }
+                waiting = continuation
+                return false
+            }
+            if resumeNow { continuation.resume() }
+        }
+        return value
+    }
+
+    func hasKey(for id: String) -> Bool { lock.withLock { keys[id] != nil } }
+    func save(_ key: String, for id: String) throws { lock.withLock { keys[id] = key } }
+    func removeKey(for id: String) throws { lock.withLock { keys[id] = nil } }
+
+    /// Lets the pending read (or the next one) finish.
+    func release() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard let waiting else {
+                released += 1
+                return nil
+            }
+            self.waiting = nil
+            return waiting
+        }
+        continuation?.resume()
+    }
+}
+
 /// A clock the test moves by hand.
 @MainActor
 final class FakeClock {
@@ -399,6 +450,26 @@ struct KeyPollerTests {
         await task.value
         #expect(poller.provider == KeyProvider<TestKeyAPI>())
         #expect(lines.isEmpty)
+    }
+
+    @Test("a key read that finishes after the key changed isn't kept: the next poll sends the new key")
+    func staleKeyRead() async throws {
+        let store = GateKeyStore(["testkey": fakeKey])
+        let transport = FakeTransport(.response(status: 200, body: goodBody))
+        let poller = KeyPoller<TestKeyAPI>(store: store, transport: transport, now: { [clock] in clock.now })
+        let first = Task { await poller.poll(.timer) }
+        while store.reads == 0 { await Task.yield() }
+        try store.save("fake-key-replacement", for: "testkey")
+        poller.keyChanged()
+        store.release()
+        await first.value
+        #expect(transport.requests.isEmpty)
+
+        let second = Task { await poller.poll(.timer) }
+        while store.reads < 2, transport.requests.isEmpty { await Task.yield() }
+        store.release()
+        await second.value
+        #expect(transport.requests.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer fake-key-replacement"])
     }
 
     // MARK: Test connection

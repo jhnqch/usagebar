@@ -403,8 +403,11 @@ public final class KeyPoller<API: KeyAPI> {
         polling.start(at: now())
 
         if key == nil {
-            key = try? await store.key(for: API.id)
+            // Cache it only if the key didn't change (or the poller stop)
+            // while the store answered: otherwise it's the old key.
+            let read = try? await store.key(for: API.id)
             guard generation == self.generation else { return true }
+            key = read
         }
         let outcome: PollOutcome = if let key {
             await API.fetch(KeyClient(API.self, key: key, transport: transport, userAgent: userAgent))
