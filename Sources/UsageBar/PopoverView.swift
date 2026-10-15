@@ -112,17 +112,18 @@ private struct SectionView: View {
                 Image(systemName: section.systemImage)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: 15)
-                Text(section.name).font(.system(size: 13, weight: .semibold))
+                Text(section.name).font(.system(size: 13, weight: .semibold)).lineLimit(1).layoutPriority(2)
                 if let plan = section.plan {
                     Text(plan)
                         .font(.system(size: 11))
+                        .lineLimit(1)
                         .foregroundStyle(palette.muted)
                         .padding(.horizontal, 5)
                         .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(palette.border, lineWidth: 1))
                 }
                 Spacer(minLength: 8)
                 if let updated = section.updatedText {
-                    Text(updated).font(.system(size: 11)).foregroundStyle(palette.muted)
+                    Text(updated).font(.system(size: 11)).foregroundStyle(palette.muted).lineLimit(1).layoutPriority(1)
                 }
             }
             ForEach(section.rows) { row in

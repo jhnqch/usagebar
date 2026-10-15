@@ -10,7 +10,7 @@ import Foundation
 ///
 /// ```json
 /// { "data": {
-///     "plan": "pay_as_you_go",
+///     "plan": "prepaid",
 ///     "credit": { "remaining": "12.40", "limit": 20, "currency": "USD", "resets_at": "2026-11-01T07:00:00Z" },
 ///     "spend": { "today": 0.85, "this_month": "3.10", "currency": "USD" },
 ///     "balances": [{ "currency": "CNY", "amount": "48.20" }] } }

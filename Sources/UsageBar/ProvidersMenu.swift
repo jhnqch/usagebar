@@ -2,14 +2,16 @@ import AppKit
 import UsageCore
 
 /// The Providers menu, popped up from the popover's footer: a section per
-/// provider with "Show <name>" and "Show in menu bar". A key provider will
-/// add its key items to its section. `ProviderSettings.menuItems` decides
+/// provider with "Show <name>" and "Show in menu bar", and for a key
+/// provider "API key…", which opens its key window. `ProviderSettings.menuItems` decides
 /// the rows; this only builds the menu and forwards the clicks.
 @MainActor
 enum ProvidersMenu {
     struct Actions {
         var setEnabled: (Bool, String) -> Void
         var setInMenuBar: (Bool, String) -> Void
+        /// Opens the key window of the provider with this id.
+        var editKey: (String) -> Void = { _ in }
     }
 
     static func make(_ items: [ProviderMenuItem], actions: Actions) -> NSMenu {
@@ -29,6 +31,12 @@ enum ProvidersMenu {
             menuBar.state = item.inMenuBar ? .on : .off
             menuBar.isEnabled = item.isOn
             menu.addItem(menuBar)
+
+            if let key = item.key {
+                let edit = ClosureMenuItem(title: "API key…") { actions.editKey(item.id) }
+                edit.subtitle = key == .saved ? "Saved in your Keychain" : "Not set"
+                menu.addItem(edit)
+            }
         }
         return menu
     }
@@ -39,7 +47,7 @@ enum ProvidersMenu {
         menu.items.map { item in
             if item.isSeparatorItem { return "—" }
             if item.isSectionHeader { return item.title }
-            var line = "  [\(item.state == .on ? "x" : " ")] \(item.title)"
+            var line = item.title.hasSuffix("…") ? "  \(item.title)" : "  [\(item.state == .on ? "x" : " ")] \(item.title)"
             if let subtitle = item.subtitle { line += " · \(subtitle)" }
             if !item.isEnabled { line += " (disabled)" }
             return line

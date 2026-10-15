@@ -12,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let claudeUsage: ClaudeUsageMonitor
     private let claudeUsageLog: UsageLogMonitor<ClaudeTranscript.Parser, ClaudeProvider>
     private let codexUsageLog: UsageLogMonitor<CodexRollout.Parser, CodexProvider>
+    /// One per key provider UsageBar ships, by provider id.
+    private let keyMonitors: [String: any KeyMonitoring]
+    private let keyWindow = APIKeyWindow()
     private let notifier = LimitNotifier()
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
@@ -31,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         codexUsageLog = UsageLogMonitor(
             model: model, reader: UsageLogReader(directories: UsageLogs.codexSessions), name: "Codex", usage: \CodexProvider.usage
         )
+        let transport = URLSessionTransport()
+        keyMonitors = Dictionary(uniqueKeysWithValues: BuiltInProviders.keyAPIs.map { api in
+            (api.id, api.monitor(model: model, store: model.environment.keys, transport: transport))
+        })
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -39,7 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.action = #selector(togglePopover(_:))
         statusItem = item
 
-        let host = NSHostingController(rootView: PopoverHost(model: model, fit: popoverFit) { [weak self] in self?.refresh(force: true) })
+        let host = NSHostingController(rootView: PopoverHost(
+            model: model, fit: popoverFit,
+            onRefresh: { [weak self] in self?.refresh(force: true) },
+            onEditKey: { [weak self] id in self?.editKey(id) }
+        ))
         model.onSelectionChange = { [weak self] selection in self?.run(selection) }
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
@@ -96,7 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case CodexProvider.info.id:
                 codex.stop(wait: quitting)
                 codexUsageLog.stop()
-            default: break
+            default:
+                keyMonitors[id]?.stop()
             }
         }
         for id in wanted.subtracting(running) {
@@ -109,7 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case CodexProvider.info.id:
                 codex.start()
                 codexUsageLog.start()
-            default: break
+            default:
+                keyMonitors[id]?.start()
             }
         }
         running = wanted
@@ -125,6 +138,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         claudeUsageLog.refresh()
         codexUsageLog.refresh()
         codex.refresh(force: force)
+        // Key providers too ask at most once a minute.
+        keyMonitors.values.forEach { $0.refresh() }
+    }
+
+    /// Opens a key provider's key window. Saving or removing the key looks
+    /// for providers again (a saved key turns its provider on) and polls.
+    private func editKey(_ id: String) {
+        guard let monitor = keyMonitors[id] else { return }
+        let keys = model.environment.keys
+        let changed = { [weak self, weak monitor] in
+            self?.model.detectProviders()
+            monitor?.keyChanged()
+        }
+        popover.performClose(nil)
+        keyWindow.show(name: monitor.info.name, hint: monitor.keyHint, actions: APIKeyActions(
+            save: { key in
+                try keys.save(key, for: id)
+                changed()
+            },
+            remove: {
+                try keys.removeKey(for: id)
+                changed()
+            },
+            test: { [weak monitor] key in await monitor?.testConnection(key: key) ?? .noKey },
+            hasKey: { keys.hasKey(for: id) }
+        ))
     }
 
     private func show(_ label: MenuBarLabel) {
@@ -169,6 +208,7 @@ private struct PopoverHost: View {
     var model: AppModel
     var fit: PopoverFit
     var onRefresh: () -> Void
+    var onEditKey: (String) -> Void
 
     var body: some View {
         PopoverView(
@@ -177,7 +217,8 @@ private struct PopoverHost: View {
             onShowProviders: {
                 ProvidersMenu.make(model.providerItems, actions: ProvidersMenu.Actions(
                     setEnabled: { model.setEnabled($0, for: $1) },
-                    setInMenuBar: { model.setInMenuBar($0, for: $1) }
+                    setInMenuBar: { model.setInMenuBar($0, for: $1) },
+                    editKey: onEditKey
                 )).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
             },
             onRefresh: onRefresh,

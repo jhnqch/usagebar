@@ -21,16 +21,27 @@ enum SnapshotMode {
         )
 
         // The Providers menu as the app would build it for this fixture,
-        // with the fixture's providers on and taken as detected.
-        let detected = Set(fixture.selection?.enabled ?? BuiltInProviders.catalog.map(\.id))
+        // with the fixture's providers on and taken as detected (a key
+        // provider's key as saved). The example key provider is listed
+        // only when the fixture shows it.
+        let shownIDs = Set(fixture.readings.providers.map(\.id))
+        let catalog = BuiltInProviders.catalog
+            + BuiltInProviders.fixtureOnly.filter { shownIDs.contains($0.id) }.map { $0.info }
+        let detected = Set(fixture.selection?.enabled ?? catalog.map(\.id))
         var settings = ProviderSettings()
-        for info in BuiltInProviders.catalog where fixture.selection.map({ !$0.menuBar.contains(info.id) }) ?? false {
+        for info in catalog where fixture.selection.map({ !$0.menuBar.contains(info.id) }) ?? false {
             settings.setInMenuBar(false, for: info.id)
         }
         let menu = ProvidersMenu.make(
-            settings.menuItems(BuiltInProviders.catalog, detected: detected), actions: .init(setEnabled: { _, _ in }, setInMenuBar: { _, _ in })
+            settings.menuItems(catalog, detected: detected), actions: .init(setEnabled: { _, _ in }, setInMenuBar: { _, _ in })
         )
         print("Providers menu:\n" + ProvidersMenu.describe(menu))
+
+        if let keyed = catalog.first(where: \.usesKey) {
+            let keyPath = (outputPath as NSString).deletingPathExtension + "-key.png"
+            try renderKeyWindow(name: keyed.name, hint: BuiltInProviders.fixtureOnly.first { $0.id == keyed.id }?.keyHint, to: keyPath)
+            print("Key window: \(keyPath)")
+        }
 
         let scene: AnyView
         if let screenHeight {
@@ -55,6 +66,50 @@ enum SnapshotMode {
             let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
         else { throw Failure(description: "could not render the popover") }
         try png.write(to: URL(fileURLWithPath: outputPath))
+    }
+
+    /// The key window in its two looks: light with a key typed and tested,
+    /// dark with a saved key that was rejected. AppKit draws the secure
+    /// field and buttons, so this caches real views rather than using
+    /// `ImageRenderer`. The typed key is an obviously fake placeholder.
+    @MainActor
+    private static func renderKeyWindow(name: String, hint: String?, to path: String) throws {
+        func image(hasKey: Bool, typed: String, status: APIKeyView.Status, appearance: NSAppearance.Name) -> NSBitmapImageRep? {
+            let actions = APIKeyActions(save: { _ in }, remove: {}, test: { _ in .connected }, hasKey: { hasKey })
+            let view = NSHostingView(rootView: APIKeyView(name: name, hint: hint, actions: actions, typed: typed, status: status))
+            view.appearance = NSAppearance(named: appearance)
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: view.fittingSize), styleMask: [.titled], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: appearance)
+            window.title = "\(name) API key"
+            window.contentView = view
+            view.layoutSubtreeIfNeeded()
+            guard let frame = window.contentView?.superview else { return nil }
+            frame.layoutSubtreeIfNeeded()
+            guard let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return nil }
+            frame.cacheDisplay(in: frame.bounds, to: rep)
+            return rep
+        }
+        guard
+            let light = image(hasKey: false, typed: "fake-key-for-snapshot", status: .message("Connected", isProblem: false), appearance: .aqua),
+            let dark = image(hasKey: true, typed: "", status: .message("Key rejected", isProblem: true), appearance: .darkAqua),
+            let lightImage = light.cgImage, let darkImage = dark.cgImage
+        else { throw Failure(description: "could not render the key window") }
+        let gap = 40, pad = 30
+        let width = lightImage.width + darkImage.width + gap + 2 * pad
+        let height = max(lightImage.height, darkImage.height) + 2 * pad
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { throw Failure(description: "could not render the key window") }
+        context.setFillColor(CGColor(red: 0.45, green: 0.5, blue: 0.58, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(lightImage, in: CGRect(x: pad, y: height - pad - lightImage.height, width: lightImage.width, height: lightImage.height))
+        context.draw(darkImage, in: CGRect(x: pad + lightImage.width + gap, y: height - pad - darkImage.height,
+                                           width: darkImage.width, height: darkImage.height))
+        guard let composed = context.makeImage(),
+              let png = NSBitmapImageRep(cgImage: composed).representation(using: .png, properties: [:])
+        else { throw Failure(description: "could not render the key window") }
+        try png.write(to: URL(fileURLWithPath: path))
     }
 
     /// Lays out the popover the app shows, capped, in an offscreen window,

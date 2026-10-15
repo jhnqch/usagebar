@@ -23,7 +23,7 @@ final class AppModel {
     @ObservationIgnored private var alertMemory: AlertMemory
     @ObservationIgnored private var settings: ProviderSettings
     @ObservationIgnored private var detected: Set<String>
-    @ObservationIgnored private let environment: ProviderEnvironment
+    @ObservationIgnored let environment: ProviderEnvironment
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
     /// Alerts wait for the first `refresh()`, once something can post them.
@@ -113,15 +113,19 @@ final class AppModel {
 /// and `UserDefaults` in the app.
 struct ProviderEnvironment {
     var defaults: any KeyValueStore
+    /// API keys: UsageBar's own Keychain items.
+    var keys: any KeyStore
     var detect: () -> Set<String>
 
     static var live: ProviderEnvironment {
-        ProviderEnvironment(defaults: UserDefaults.standard) {
+        let keys = KeychainKeyStore()
+        return ProviderEnvironment(defaults: UserDefaults.standard, keys: keys) {
             ProviderDetection.detected(
                 BuiltInProviders.catalog,
                 fileSystem: FileManager.default,
                 home: FileManager.default.homeDirectoryForCurrentUser.path,
-                environment: ProcessInfo.processInfo.environment
+                environment: ProcessInfo.processInfo.environment,
+                keys: keys
             )
         }
     }
@@ -135,6 +139,9 @@ enum SampleReadings {
         let sample = Bundle.main.url(forResource: "sample", withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? Fixture.decode($0) }
-        return Readings([ClaudeProvider(plan: sample?.readings[ClaudeProvider.self]?.plan), CodexProvider()])
+        return Readings(
+            [ClaudeProvider(plan: sample?.readings[ClaudeProvider.self]?.plan), CodexProvider()]
+                + BuiltInProviders.keyAPIs.map { $0.emptyProvider }
+        )
     }
 }

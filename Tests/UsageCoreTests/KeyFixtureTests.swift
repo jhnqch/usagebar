@@ -26,7 +26,7 @@ struct KeyFixtureTests {
         let snapshot = try snapshot("key-balance")
         #expect(snapshot.sections.map(\.name) == ["Codex", "Example API"])
         let section = try #require(snapshot["example"])
-        #expect(section.plan == "Pay as you go")
+        #expect(section.plan == "Prepaid")
         #expect(section.updatedText == "Updated 2 min ago")
         #expect(texts(section) == [
             "Credit $12.40 left of $20 · Resets Sun 12:00 AM",
