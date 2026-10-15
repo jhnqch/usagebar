@@ -182,12 +182,20 @@ struct ProviderSelectionSnapshotTests {
         let snapshot = snapshot(ProviderSelection(enabled: [], menuBar: []))
         #expect(snapshot.sections.isEmpty)
         #expect(snapshot.menuBar.parts.isEmpty)
-        #expect(snapshot.menuBar.accessibilityText == "Usage. No providers on.")
+        #expect(snapshot.menuBar.accessibilityText == "UsageBar")
         #expect(snapshot.emptyText == """
             No providers are on. UsageBar shows Claude once Claude Code is set up (~/.claude) \
             and Codex once Codex or the ChatGPT app is installed (~/.codex). \
             Turn one on under Providers.
             """)
+    }
+
+    @Test("with providers on but every menu bar part hidden, VoiceOver doesn't claim nothing is on")
+    func allPartsHidden() {
+        let snapshot = snapshot(ProviderSelection(enabled: ["claude", "codex"], menuBar: []))
+        #expect(snapshot.menuBar.parts.isEmpty)
+        #expect(snapshot.menuBar.accessibilityText == "UsageBar")
+        #expect(snapshot.sections.count == 2)
     }
 
     @Test("with a provider on, there's no empty text")

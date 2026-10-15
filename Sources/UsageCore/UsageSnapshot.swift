@@ -84,10 +84,11 @@ public struct MenuBarLabel: Equatable, Sendable {
         }
     }
 
-    /// What VoiceOver reads: "Usage. Claude 61%. Codex 13%.", or "Usage.
-    /// No providers on." for the neutral icon.
+    /// What VoiceOver reads: "Usage. Claude 61%. Codex 13%.", or the app's
+    /// name for the neutral icon, which shows both when nothing is on and
+    /// when every part is hidden.
     public var accessibilityText: String {
-        if parts.isEmpty { return "Usage. No providers on." }
+        if parts.isEmpty { return "UsageBar" }
         return (["Usage."] + parts.map { "\($0.name) \($0.value.text)." }).joined(separator: " ")
     }
 
