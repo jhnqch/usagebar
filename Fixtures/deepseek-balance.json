@@ -1,0 +1,21 @@
+{
+  "_comment": "Synthetic: built from the documented GET /user/balance response shape (api-docs.deepseek.com/api/get-user-balance), not recorded from a real key. Amounts are strings, as documented.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "deepseek": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "is_available": true,
+          "balance_infos": [
+            { "currency": "CNY", "total_balance": "110.00", "granted_balance": "10.00", "topped_up_balance": "100.00" },
+            { "currency": "USD", "total_balance": "4.25", "granted_balance": "0.00", "topped_up_balance": "4.25" }
+          ]
+        }
+      }
+    ]
+  },
+  "providers": { "enabled": ["deepseek"], "menuBar": [] }
+}

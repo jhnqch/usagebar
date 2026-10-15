@@ -187,11 +187,14 @@ public struct ValueLine: Equatable, Sendable, Identifiable {
     public var label: String
     /// "¥48.20", or "—" without a reading.
     public var valueText: String
+    /// A muted line under it, e.g. "¥100 topped up · ¥10 granted".
+    public var detailText: String? = nil
 
-    public init(id: String, label: String, valueText: String) {
+    public init(id: String, label: String, valueText: String, detailText: String? = nil) {
         self.id = id
         self.label = label
         self.valueText = valueText
+        self.detailText = detailText
     }
 }
 

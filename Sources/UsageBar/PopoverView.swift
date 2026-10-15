@@ -266,17 +266,28 @@ private struct CreditMeterView: View {
     }
 }
 
-/// A balance or spend row: the label, and the amount on the right.
+/// A balance or spend row: the label, and the amount on the right, with
+/// its detail ("¥100 topped up · ¥10 granted") muted underneath.
 private struct ValueLineView: View {
     var line: ValueLine
 
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
-        HStack {
-            Text(line.label)
-            Spacer()
-            Text(line.valueText).fontWeight(.semibold).monospacedDigit()
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(line.label)
+                Spacer()
+                Text(line.valueText).fontWeight(.semibold).monospacedDigit()
+            }
+            .font(.system(size: 12))
+            if let detail = line.detailText {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette(scheme).muted)
+            }
         }
-        .font(.system(size: 12))
         .accessibilityElement(children: .combine)
     }
 }

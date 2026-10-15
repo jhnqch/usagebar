@@ -1,0 +1,18 @@
+{
+  "_comment": "Synthetic: the documented GET /user/balance shape with is_available false and amounts sent as numbers rather than strings.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "deepseek": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "is_available": false,
+          "balance_infos": [{ "currency": "CNY", "total_balance": 0.12, "granted_balance": 0, "topped_up_balance": 0.12 }]
+        }
+      }
+    ]
+  },
+  "providers": { "enabled": ["deepseek"], "menuBar": [] }
+}

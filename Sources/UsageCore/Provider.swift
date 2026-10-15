@@ -115,11 +115,15 @@ public struct ValueRow: Equatable, Sendable {
     public var label: String
     /// Nil shows "—".
     public var value: Amount?
+    /// A muted line under it: "¥100 topped up · ¥10 granted". Shown only
+    /// with a value.
+    public var detail: String?
 
-    public init(id: String, label: String, value: Amount?) {
+    public init(id: String, label: String, value: Amount?, detail: String? = nil) {
         self.id = id
         self.label = label
         self.value = value
+        self.detail = detail
     }
 }
 

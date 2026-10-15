@@ -31,7 +31,9 @@ public enum UsageEngine {
                 switch row {
                 case .window: .meter(nextMeter.next()!)
                 case let .credit(credit): .credit(creditMeter(credit, clock: clock))
-                case let .value(value): .value(ValueLine(id: value.id, label: value.label, valueText: value.value?.text ?? "—"))
+                case let .value(value):
+                    .value(ValueLine(id: value.id, label: value.label, valueText: value.value?.text ?? "—",
+                                     detailText: value.value == nil ? nil : value.detail))
                 }
             }
             alertWindows += zip(windows, meters).map { window, meter in

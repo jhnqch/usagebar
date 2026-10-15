@@ -53,3 +53,15 @@ public struct Amount: Equatable, Sendable {
         return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
     }
 }
+
+extension Amount {
+    /// A finite number from a JSON value that may be a number or a string
+    /// holding one ("110.00"); nil for anything else, booleans included.
+    static func number(_ value: Any?) -> Double? {
+        if let string = value as? String {
+            return Double(string.trimmingCharacters(in: .whitespaces)).flatMap { $0.isFinite ? $0 : nil }
+        }
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        return number.doubleValue.isFinite ? number.doubleValue : nil
+    }
+}

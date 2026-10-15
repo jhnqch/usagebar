@@ -1,0 +1,20 @@
+{
+  "_comment": "The 401 body is what api.deepseek.com/user/balance answered on 2026-10-14 to a made-up key; the 200 before it is synthetic.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "deepseek": [
+      {
+        "receivedAt": "2026-10-10T14:00:00-07:00",
+        "status": 200,
+        "body": { "is_available": true, "balance_infos": [{ "currency": "CNY", "total_balance": "110.00", "granted_balance": "10.00", "topped_up_balance": "100.00" }] }
+      },
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 401,
+        "body": { "error": { "message": "Authentication Fails, Your api key: ****0000 is invalid (request_id: 10aa24d8-44b3-4fc0-a908-c5def5570809)", "type": "authentication_error", "param": null, "code": "invalid_request_error" } }
+      }
+    ]
+  },
+  "providers": { "enabled": ["deepseek"], "menuBar": [] }
+}
