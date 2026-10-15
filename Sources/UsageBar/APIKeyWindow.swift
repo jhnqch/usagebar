@@ -24,6 +24,10 @@ struct APIKeyView: View {
     @State private var hasKey: Bool
     @State private var status: Status
     @State private var testing = false
+    /// Bumped whenever the key being tested may no longer be the one in
+    /// question (typing, Save, Remove): a test that finishes after that
+    /// doesn't report.
+    @State private var testRun = 0
 
     enum Status: Equatable {
         case idle
@@ -54,6 +58,7 @@ struct APIKeyView: View {
             SecureField(hasKey ? "Saved key" : "API key", text: $typed)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
+                .onChange(of: typed) { invalidateTest() }
             HStack(spacing: 8) {
                 statusText
                 Spacer(minLength: 8)
@@ -87,6 +92,7 @@ struct APIKeyView: View {
         }
         do {
             try actions.save(key)
+            invalidateTest()
             typed = ""
             hasKey = actions.hasKey()
             status = .message("Saved", isProblem: false)
@@ -98,6 +104,7 @@ struct APIKeyView: View {
     private func remove() {
         do {
             try actions.remove()
+            invalidateTest()
             typed = ""
             hasKey = actions.hasKey()
             status = .message("Removed", isProblem: false)
@@ -107,14 +114,22 @@ struct APIKeyView: View {
     }
 
     private func test() {
+        testRun += 1
+        let run = testRun
         testing = true
         status = .idle
         let candidate = typed
         Task {
             let result = await actions.test(candidate.isEmpty ? nil : candidate)
+            guard run == testRun else { return }
             testing = false
             status = .message(result.text, isProblem: result != .connected)
         }
+    }
+
+    private func invalidateTest() {
+        testRun += 1
+        testing = false
     }
 }
 
