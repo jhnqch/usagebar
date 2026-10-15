@@ -200,6 +200,10 @@ struct CopilotTests {
         #expect(texts(farOff).first == "Premium requests 50% · Resets Sat Oct 31 5:00 PM")
         let past = try section(quota: internalAnswer(premium, extra: #", "quota_reset_date": "2026-09-01""#))
         #expect(texts(past).first == "Premium requests 50% · Resets Sat Oct 31 5:00 PM")
+        // 31 Feb isn't a day; read as one it would roll over to 3 Mar.
+        let impossible = try section(quota: internalAnswer(premium, extra: #", "quota_reset_date": "2027-02-31""#),
+                                     period: #"{ "year": 2027, "month": 2 }"#, now: "2027-02-10T10:00:00-08:00", receivedAt: "2027-02-10T09:58:00-08:00")
+        #expect(texts(impossible).first == "Premium requests 50% · Resets Sun Feb 28 4:00 PM")
         let junk = try section(quota: internalAnswer(premium, extra: #", "quota_reset_date_utc": 7"#))
         #expect(texts(junk).first == "Premium requests 50% · Resets Sat Oct 31 5:00 PM")
     }
@@ -239,9 +243,17 @@ struct CopilotTests {
         #expect(texts(noCounts) == ["This month —"])
         #expect(noCounts.note == "Couldn't read the AI credit usage from api.github.com")
 
-        let oddItems = try section(billing: #"{ "status": 200, "body": { "usageItems": [7, { "model": "GPT-5" }, { "grossQuantity": 3, "grossAmount": 0.12 }, null] } }"#)
-        #expect(texts(oddItems) == ["This month 3 premium requests"])
-        #expect(detail(values(oddItems).first) == "$0.12 at list price\nOther models 3")
+        // A total missing an item would look right and be wrong: unknown.
+        let incomplete = try section(credits: #"{ "status": 200, "body": { "usageItems": [{ "model": "GPT-5", "quantity": 12 }, { "model": "o3", "grossQuantity": 3 }] } }"#)
+        #expect(texts(incomplete) == ["This month —"])
+        #expect(incomplete.note == "Couldn't read the AI credit usage from api.github.com")
+        let notAnItem = try section(credits: #"{ "status": 200, "body": { "usageItems": [7, { "model": "o3", "grossQuantity": 3 }] } }"#)
+        #expect(texts(notAnItem) == ["This month —"])
+
+        // Without a model or amounts, the count still adds up.
+        let oddItems = try section(billing: #"{ "status": 200, "body": { "usageItems": [{ "grossQuantity": "3", "grossAmount": 0.12 }, { "model": "GPT-5", "grossQuantity": 2, "grossAmount": "lots" }] } }"#)
+        #expect(texts(oddItems) == ["This month 5 premium requests"])
+        #expect(detail(values(oddItems).first) == "$0.12 at list price\nOther models 3 · GPT-5 2")
 
         let unknownPlan = try section(quota: internalAnswer(#"{ "unlimited": true }"#, plan: "copilot_galaxy"))
         #expect(unknownPlan.plan == "Copilot Galaxy")

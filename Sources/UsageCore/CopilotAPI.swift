@@ -244,8 +244,9 @@ public enum CopilotAPI: KeyAPI {
         var usage = Usage()
         var byModel: [String: Double] = [:]
         var order: [String] = []
-        for case let item as [String: Any] in items {
-            guard let quantity = Amount.number(item["grossQuantity"]) else { continue }
+        for element in items {
+            // A total missing an item would look right and be wrong.
+            guard let item = element as? [String: Any], let quantity = Amount.number(item["grossQuantity"]) else { return .unreadable }
             usage.quantity += quantity
             if let list = Amount.number(item["grossAmount"]) { usage.listPrice = (usage.listPrice ?? 0) + list }
             if let net = Amount.number(item["netAmount"]) { usage.billed = (usage.billed ?? 0) + net }
@@ -253,8 +254,6 @@ public enum CopilotAPI: KeyAPI {
             if byModel[model] == nil { order.append(model) }
             byModel[model, default: 0] += quantity
         }
-        // Items with no count read are no report, not an empty one.
-        if !items.isEmpty && order.isEmpty { return .unreadable }
         // Most first; ties in the report's order.
         let models = order.map { ModelUsage(model: $0, quantity: byModel[$0] ?? 0) }
         usage.models = models.enumerated().sorted { a, b in
@@ -475,7 +474,9 @@ public enum CopilotAPI: KeyAPI {
     /// "2026-11-01" at midnight UTC.
     private static func dayDate(_ text: String) -> Date? {
         let parts = text.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3, (1...12).contains(parts[1]), (1...31).contains(parts[2]) else { return nil }
-        return utc.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+        guard parts.count == 3, let date = utc.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else { return nil }
+        // Not a day that rolled over into another: 31 Feb isn't 3 Mar.
+        let read = utc.dateComponents([.year, .month, .day], from: date)
+        return [read.year, read.month, read.day] == [parts[0], parts[1], parts[2]] ? date : nil
     }
 }
