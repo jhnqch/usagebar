@@ -1,0 +1,28 @@
+{
+  "cycles" : [
+    {
+      "maxed" : true,
+      "name" : "Claude 5-hour limit",
+      "resetAnnounced" : false,
+      "resetsAt" : 1791666000,
+      "warned" : true,
+      "window" : "claude.fiveHour"
+    },
+    {
+      "maxed" : false,
+      "name" : "Claude weekly limit",
+      "resetAnnounced" : false,
+      "resetsAt" : 1791900000,
+      "warned" : true,
+      "window" : "claude.sevenDay"
+    },
+    {
+      "maxed" : false,
+      "name" : "Codex weekly limit",
+      "resetAnnounced" : false,
+      "resetsAt" : 1792095360,
+      "warned" : true,
+      "window" : "codex.10080m"
+    }
+  ]
+}

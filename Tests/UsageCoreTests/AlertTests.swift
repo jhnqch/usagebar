@@ -279,6 +279,21 @@ struct AlertMemoryTests {
         #expect(run(claude: claude(fiveHour: 95), codex: codex(weekly: 96)) == [])
     }
 
+    @Test("a file saved before providers still loads: its windows keep their ids, nothing repeats, a pending reset is announced")
+    func savedBeforeProviders() throws {
+        // As the first release wrote it: Claude's 5-hour window maxed and
+        // reset at 2:00 PM, unannounced; Claude's and Codex's weekly windows
+        // warned this cycle.
+        let memory = AlertMemory.decode(try Data(contentsOf: fixtureURL("alerts-v1.json")))
+        #expect(memory.cycles.map(\.window) == ["claude.fiveHour", "claude.sevenDay", "codex.10080m"])
+        var run = AlertRun(memory: memory)
+        let alerts = run(claude: claude(fiveHour: 20, weekly: 95), codex: codex(weekly: 96))
+        #expect(alerts.map(\.title) == ["Claude 5-hour limit reset"])
+        #expect(alerts.map(\.body) == ["Reset at 2:00 PM. You're good to go."])
+        run.restart()
+        #expect(run(claude: claude(fiveHour: 20, weekly: 95), codex: codex(weekly: 96), at: now + 60) == [])
+    }
+
     @Test("cycles a week past their reset are forgotten, and a reset that old isn't announced")
     func pruned() {
         var run = AlertRun()
