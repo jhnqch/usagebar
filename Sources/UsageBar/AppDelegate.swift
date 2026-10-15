@@ -78,13 +78,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         // No orphaned app-server after quitting.
-        run(ProviderSelection(enabled: [], menuBar: []))
+        run(ProviderSelection(enabled: [], menuBar: []), quitting: true)
     }
 
     /// Starts the monitors of the providers that are on and stops the rest:
     /// a provider that's off runs no app-server, polls nothing and never
     /// reads the Keychain.
-    private func run(_ selection: ProviderSelection) {
+    private func run(_ selection: ProviderSelection, quitting: Bool = false) {
         let wanted = Set(selection.enabled)
         for id in running.subtracting(wanted) {
             log.info("stopping \(id, privacy: .public)")
@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 claudeUsage.stop()
                 claudeUsageLog.stop()
             case CodexProvider.info.id:
-                codex.stop()
+                codex.stop(wait: quitting)
                 codexUsageLog.stop()
             default: break
             }

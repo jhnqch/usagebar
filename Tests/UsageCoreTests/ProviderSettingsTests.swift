@@ -233,3 +233,25 @@ struct ProviderSelectionSnapshotTests {
         #expect(backOn.alerts.isEmpty)
     }
 }
+
+@Suite("Codex executable")
+struct CodexExecutableTests {
+    private let chatGPT = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
+
+    @Test("app-server runs the codex that detection found, ChatGPT's first")
+    func firstFound() {
+        #expect(CodexProvider.executable(fileSystem: FakeFileSystem(paths: [chatGPT, "/opt/homebrew/bin/codex"]), environment: [:]) == chatGPT)
+        #expect(CodexProvider.executable(fileSystem: FakeFileSystem(paths: ["/opt/homebrew/bin/codex"]), environment: [:]) == "/opt/homebrew/bin/codex")
+        #expect(CodexProvider.executable(fileSystem: FakeFileSystem(paths: ["/usr/local/bin/codex"]), environment: [:]) == "/usr/local/bin/codex")
+    }
+
+    @Test("USAGEBAR_CODEX wins, even when it doesn't exist (to check the fallback)")
+    func override() {
+        #expect(CodexProvider.executable(fileSystem: FakeFileSystem(paths: [chatGPT]), environment: ["USAGEBAR_CODEX": "/nope"]) == "/nope")
+    }
+
+    @Test("with no codex installed there's nothing to run")
+    func none() {
+        #expect(CodexProvider.executable(fileSystem: FakeFileSystem(), environment: [:]) == nil)
+    }
+}

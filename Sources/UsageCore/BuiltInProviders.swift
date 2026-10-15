@@ -27,13 +27,25 @@ extension CodexProvider {
     /// Codex shows when its home directory exists or a `codex` binary is
     /// installed, including the one ChatGPT.app bundles.
     public static let info = ProviderInfo(id: "codex", name: "Codex", inMenuBarByDefault: true) { home, environment in
+        [environmentPath("CODEX_HOME", environment), "\(home)/.codex"].compactMap(\.self) + executableCandidates(environment)
+    }
+
+    /// Where a `codex` binary may be, in order of preference: the one
+    /// ChatGPT.app bundles first.
+    private static func executableCandidates(_ environment: [String: String]) -> [String] {
         [
-            environmentPath("CODEX_HOME", environment),
             environmentPath("USAGEBAR_CODEX", environment),
-            "\(home)/.codex",
             "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
         ].compactMap(\.self)
+    }
+
+    /// The `codex` binary to run app-server with: `USAGEBAR_CODEX` when set
+    /// (even if missing, to check the session-log fallback), else the first
+    /// candidate that exists; nil when there's none.
+    public static func executable(fileSystem: some FileSystem, environment: [String: String]) -> String? {
+        if let override = environmentPath("USAGEBAR_CODEX", environment) { return override }
+        return executableCandidates(environment).first { fileSystem.fileExists(atPath: $0) }
     }
 }

@@ -58,10 +58,11 @@ final class CodexMonitor {
         Task { await scanSessionLog() }
     }
 
-    func stop() {
+    /// `wait`: see `CodexAppServerProcess.stop(wait:)`.
+    func stop(wait: Bool = true) {
         loop?.cancel()
         loop = nil
-        appServer.stop()
+        appServer.stop(wait: wait)
     }
 
     private func read() {

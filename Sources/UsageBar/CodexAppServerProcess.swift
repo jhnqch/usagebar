@@ -13,17 +13,21 @@ import UsageCore
 /// app-server exits on end of input.
 @MainActor
 final class CodexAppServerProcess {
-    /// The `codex` binary bundled inside ChatGPT.app. `USAGEBAR_CODEX`
-    /// overrides it (handy for checking the session-log fallback).
-    static let defaultExecutable = URL(fileURLWithPath:
-        ProcessInfo.processInfo.environment["USAGEBAR_CODEX"]
+    /// The `codex` binary bundled inside ChatGPT.app, else an installed
+    /// one. `USAGEBAR_CODEX` overrides it (handy for checking the
+    /// session-log fallback). With none, it's ChatGPT's path, which fails to
+    /// launch and leaves the session logs.
+    static var defaultExecutable: URL {
+        URL(fileURLWithPath: CodexProvider.executable(fileSystem: FileManager.default, environment: ProcessInfo.processInfo.environment)
             ?? "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
+    }
 
     /// Called on the main actor with each new reading, or nil when
     /// app-server answered with nothing usable.
     var onReading: ((CodexLimits?) -> Void)?
 
-    private let executable: URL
+    /// Looked up at each launch, so a codex installed since is found.
+    private let executable: () -> URL
     private let log = Logger(subsystem: "io.github.jhnqch.usagebar", category: "codex-app-server")
     private var process: Process?
     private var stdin: FileHandle?
@@ -35,7 +39,7 @@ final class CodexAppServerProcess {
     private var watchdog: Task<Void, Never>?
     private var stopped = true
 
-    init(executable: URL = defaultExecutable) {
+    init(executable: @escaping () -> URL = { defaultExecutable }) {
         self.executable = executable
     }
 
@@ -50,9 +54,11 @@ final class CodexAppServerProcess {
         send(conversation.requestRateLimits())
     }
 
-    /// Ends the child process and stops restarting it. Waits up to a
-    /// second for it to exit, then kills it.
-    func stop() {
+    /// Ends the child process and stops restarting it. Gives it a second
+    /// to exit, then kills it. With `wait` (quitting), that second is spent
+    /// here so the child can't outlive the app; without it (Codex turned
+    /// off), off the main actor so the menu bar doesn't freeze.
+    func stop(wait: Bool = true) {
         stopped = true
         restart?.cancel()
         watchdog?.cancel()
@@ -62,10 +68,18 @@ final class CodexAppServerProcess {
         try? stdin?.close()
         stdin = nil
         if process.isRunning { process.terminate() }
-        let deadline = Date().addingTimeInterval(1)
-        while process.isRunning, Date() < deadline { usleep(10_000) }
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        log.info("app-server stopped")
+        let child = process
+        let finish: @Sendable () -> Void = { [log] in
+            let deadline = Date().addingTimeInterval(1)
+            while child.isRunning, Date() < deadline { usleep(10_000) }
+            if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+            log.info("app-server stopped")
+        }
+        if wait {
+            finish()
+        } else {
+            DispatchQueue.global(qos: .utility).async(execute: finish)
+        }
     }
 
     private func launch() {
@@ -74,7 +88,7 @@ final class CodexAppServerProcess {
         conversation = CodexAppServerConversation(clientVersion: Self.appVersion)
 
         let process = Process()
-        process.executableURL = executable
+        process.executableURL = executable()
         process.arguments = ["app-server"]
         let input = Pipe()
         let output = Pipe()
