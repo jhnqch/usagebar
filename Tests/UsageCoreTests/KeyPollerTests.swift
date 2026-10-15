@@ -451,6 +451,16 @@ struct KeyPollerTests {
         #expect(creditText(try section(poller)) == "—")
     }
 
+    @Test("turning a provider back on polls at once, even if it was backing off when turned off")
+    func restartAfterBackoff() async {
+        let transport = FakeTransport(.response(status: 503, body: Data()))
+        let poller = poller(transport: transport)
+        await poller.poll(.timer)
+        #expect(due(poller, .timer) == 600)
+        poller.stop()
+        #expect(due(poller, .timer) == 0)
+    }
+
     @Test("an answer that arrives after stop() is dropped")
     func stopDropsAnswer() async throws {
         let transport = GateTransport()

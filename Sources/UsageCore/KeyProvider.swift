@@ -282,6 +282,11 @@ struct KeyPolling<API: KeyAPI>: Sendable {
         schedule.start(at: now)
     }
 
+    /// The next poll is due at once; the reading stays.
+    mutating func restartSchedule() {
+        schedule = PollSchedule()
+    }
+
     @discardableResult
     mutating func finish(_ outcome: PollOutcome, at now: Date) -> Finished {
         switch outcome {
@@ -431,12 +436,13 @@ public final class KeyPoller<API: KeyAPI> {
         provider = polling.provider
     }
 
-    /// The provider was turned off: forget the key and drop any answer
-    /// under way.
+    /// The provider was turned off: forget the key, drop any answer under
+    /// way, and end any back-off, so turning it back on polls at once.
     public func stop() {
         key = nil
         generation += 1
         inFlight = false
+        polling.restartSchedule()
     }
 
     /// Tries `typed` (or, with nothing typed, the saved key) against the
