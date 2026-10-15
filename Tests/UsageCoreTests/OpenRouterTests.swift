@@ -54,4 +54,25 @@ struct OpenRouterTests {
         ])
         #expect(section.note == nil)
     }
+
+    @Test("a key with no limit shows only its spend rows")
+    func noLimit() throws {
+        let section = try #require(try snapshot("openrouter-no-limit")["openrouter"])
+        #expect(section.plan == nil)
+        #expect(texts(section) == ["Today $1.92", "This week $14.35", "This month $38.06"])
+    }
+
+    /// Free models allow 50 requests a UTC day until $10 of credit is
+    /// bought; the day ends at 5 PM in Los Angeles.
+    @Test("a free-tier key shows the Free badge and its free-model requests left today")
+    func freeTier() throws {
+        let section = try #require(try snapshot("openrouter-free")["openrouter"])
+        #expect(section.plan == "Free")
+        #expect(texts(section) == [
+            "Free requests 38 left of 50 · Resets in 2h 20m (5:00 PM)",
+            "Today $0",
+            "This week $0",
+            "This month $0",
+        ])
+    }
 }

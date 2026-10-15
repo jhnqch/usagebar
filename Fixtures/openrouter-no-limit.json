@@ -1,0 +1,48 @@
+{
+  "_comment": "Synthetic: built from the documented GET /api/v1/key response shape (openrouter.ai/docs/api-reference/limits), not recorded from a real key.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "openrouter": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "data": {
+            "label": "Synthetic demo key",
+            "limit": null,
+            "limit_reset": null,
+            "limit_remaining": null,
+            "include_byok_in_limit": false,
+            "budgets": [],
+            "effective_budget": null,
+            "usage": 112.4,
+            "usage_daily": 1.92,
+            "usage_weekly": 14.35,
+            "usage_monthly": 38.06,
+            "byok_usage": 0,
+            "byok_usage_daily": 0,
+            "byok_usage_weekly": 0,
+            "byok_usage_monthly": 0,
+            "is_free_tier": false,
+            "free_model_daily_requests": {
+              "used": 3,
+              "limit": 1000,
+              "remaining": 997
+            },
+            "rate_limit": {
+              "requests": -1,
+              "interval": "10s"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "providers": {
+    "enabled": [
+      "openrouter"
+    ],
+    "menuBar": []
+  }
+}

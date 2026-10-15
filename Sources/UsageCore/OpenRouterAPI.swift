@@ -25,7 +25,9 @@ import Foundation
 ///   `key_limit` budget repeats the key's limit, already shown as the
 ///   credit meter, so it's left out. A budget that never resets has no
 ///   window to pace or alert on, so it's a credit meter instead.
-/// - `is_free_tier` shows the plan badge "Free".
+/// - `is_free_tier` shows the plan badge "Free" and, from
+///   `free_model_daily_requests`, the free-model requests left this UTC
+///   day (with no credit bought, that's all the key can use).
 public enum OpenRouterAPI: KeyAPI {
     public static let id = "openrouter"
     public static let name = "OpenRouter"
@@ -44,6 +46,9 @@ public enum OpenRouterAPI: KeyAPI {
         public var spentThisWeek: Double?
         public var spentThisMonth: Double?
         public var budgets: [Budget]
+        /// Free-model requests left today and allowed a day.
+        public var freeRequestsLeft: Double?
+        public var freeRequestsLimit: Double?
     }
 
     /// The key's own credit cap.
@@ -87,6 +92,7 @@ public enum OpenRouterAPI: KeyAPI {
             }
         }
 
+        let freeRequests = data["free_model_daily_requests"] as? [String: Any] ?? [:]
         let reading = Reading(
             receivedAt: receivedAt,
             isFreeTier: data["is_free_tier"] as? Bool,
@@ -94,10 +100,12 @@ public enum OpenRouterAPI: KeyAPI {
             spentToday: number(data["usage_daily"]),
             spentThisWeek: number(data["usage_weekly"]),
             spentThisMonth: number(data["usage_monthly"]),
-            budgets: []
+            budgets: [],
+            freeRequestsLeft: number(freeRequests["remaining"]),
+            freeRequestsLimit: number(freeRequests["limit"])
         )
         let empty = Reading(receivedAt: receivedAt, isFreeTier: nil, keyLimit: .unknown, spentToday: nil, spentThisWeek: nil,
-                            spentThisMonth: nil, budgets: [])
+                            spentThisMonth: nil, budgets: [], freeRequestsLeft: nil, freeRequestsLimit: nil)
         return reading == empty ? nil : reading
     }
 
@@ -111,6 +119,14 @@ public enum OpenRouterAPI: KeyAPI {
         case let .limited(left, limit, resetsAt):
             rows.append(.credit(CreditRow(id: "openrouter.limit", label: "Key limit", left: left.map(dollars), of: dollars(limit),
                                           resetsAt: resetsAt)))
+        }
+        if let reading, reading.isFreeTier == true {
+            let requests = Amount.Unit.count("")
+            rows.append(.credit(CreditRow(
+                id: "openrouter.freeRequests", label: "Free requests",
+                left: reading.freeRequestsLeft.map { Amount($0, requests) }, of: reading.freeRequestsLimit.map { Amount($0, requests) },
+                resetsAt: nextReset(after: reading.receivedAt, interval: "daily")
+            )))
         }
         rows += [
             .value(ValueRow(id: "openrouter.today", label: "Today", value: reading?.spentToday.map(dollars))),
