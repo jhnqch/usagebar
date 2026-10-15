@@ -45,11 +45,15 @@ extension FileManager: FileSystem {}
 /// macOS prompt, and it belongs to a provider that may stay off.
 public enum ProviderDetection {
     /// The ids of the providers in `catalog` with any detection path present.
+    /// A key provider is detected when `keys` has its key saved; detection
+    /// only asks whether there is one, which shows no Keychain prompt.
     public static func detected(
-        _ catalog: [ProviderInfo], fileSystem: some FileSystem, home: String, environment: [String: String]
+        _ catalog: [ProviderInfo], fileSystem: some FileSystem, home: String, environment: [String: String],
+        keys: (any KeyStore)? = nil
     ) -> Set<String> {
         Set(catalog.filter { info in
-            info.detectionPaths(home, environment).contains { fileSystem.fileExists(atPath: $0) }
+            if info.usesKey, keys?.hasKey(for: info.id) == true { return true }
+            return info.detectionPaths(home, environment).contains { fileSystem.fileExists(atPath: $0) }
         }.map(\.id))
     }
 }
@@ -104,7 +108,8 @@ public struct ProviderSettings: Equatable, Sendable {
                 name: info.name,
                 isOn: selection.enabled.contains(info.id),
                 inMenuBar: selection.menuBar.contains(info.id),
-                detail: detected.contains(info.id) ? nil : "Not found on this Mac"
+                detail: detected.contains(info.id) ? nil : info.usesKey ? "No API key saved" : "Not found on this Mac",
+                key: info.usesKey ? (detected.contains(info.id) ? .saved : .missing) : nil
             )
         }
     }
@@ -157,6 +162,12 @@ public struct ProviderMenuItem: Equatable, Sendable, Identifiable {
     /// A hint under the name, e.g. "Not found on this Mac"; nil when there's
     /// nothing to add.
     public var detail: String?
+    /// For a key provider, whether its key is saved; nil for the others.
+    public var key: KeyStatus? = nil
+
+    public enum KeyStatus: Equatable, Sendable {
+        case saved, missing
+    }
 }
 
 /// Where settings are saved: `UserDefaults` in the app, a dictionary in
