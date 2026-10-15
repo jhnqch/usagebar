@@ -145,17 +145,11 @@ struct ProviderEnvironment {
     }
 }
 
-/// The providers the app starts with, in display order, and what it
-/// bundles: Claude's plan for the badge, from the recorded sample. Neither
-/// Claude source reports the plan; every limit is live.
+/// The providers the app starts with, in display order, all empty: every
+/// reading is live. Claude's plan badge comes from Claude Code's saved login
+/// (`ClaudeUsageMonitor`).
 enum SampleReadings {
     static func load() -> Readings {
-        let sample = Bundle.main.url(forResource: "sample", withExtension: "json")
-            .flatMap { try? Data(contentsOf: $0) }
-            .flatMap { try? Fixture.decode($0) }
-        return Readings(
-            [ClaudeProvider(plan: sample?.readings[ClaudeProvider.self]?.plan), CodexProvider()]
-                + BuiltInProviders.keyAPIs.map { $0.emptyProvider }
-        )
+        Readings([ClaudeProvider(), CodexProvider()] + BuiltInProviders.keyAPIs.map { $0.emptyProvider })
     }
 }

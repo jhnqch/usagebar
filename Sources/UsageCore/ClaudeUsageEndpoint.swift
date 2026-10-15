@@ -28,6 +28,26 @@ public enum ClaudeUsageEndpoint {
         return token
     }
 
+    /// The plan badge for Claude Code's saved login: "Max 20x" from a
+    /// `rateLimitTier` like `default_claude_max_20x`, else `subscriptionType`
+    /// ("pro" reads "Pro"); nil when neither is readable. Neither field is
+    /// documented, so anything unexpected just leaves the badge off. Only
+    /// these two fields are read; the tokens are not.
+    public static func plan(fromSecret secret: Data) -> String? {
+        guard let root = (try? JSONSerialization.jsonObject(with: secret)) as? [String: Any],
+              let oauth = root["claudeAiOauth"] as? [String: Any],
+              let type = (oauth["subscriptionType"] as? String)?.trimmingCharacters(in: .whitespaces), !type.isEmpty
+        else { return nil }
+        let name = type.prefix(1).uppercased() + type.dropFirst()
+        // "default_claude_max_20x": the multiplier is the last part.
+        if let tier = oauth["rateLimitTier"] as? String,
+           let multiplier = tier.split(separator: "_").last, multiplier.count > 1, multiplier.hasSuffix("x"),
+           multiplier.dropLast().allSatisfy(\.isNumber), tier.lowercased().contains(type.lowercased()) {
+            return "\(name) \(multiplier)"
+        }
+        return name
+    }
+
     /// The request for `accessToken`. The token goes in this header and
     /// nowhere else; nothing is cached or stored.
     public static func request(accessToken: String, userAgent: String) -> URLRequest {

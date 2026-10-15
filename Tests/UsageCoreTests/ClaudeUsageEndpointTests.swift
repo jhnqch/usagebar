@@ -2,8 +2,8 @@ import Foundation
 import Testing
 import UsageCore
 
-/// A response from Claude's usage endpoint recorded on this Mac (Max,
-/// no ids in it to scrub): `five_hour` and `seven_day` windows, the newer
+/// A response from Claude's usage endpoint recorded from a real account
+/// (no ids in it to scrub): `five_hour` and `seven_day` windows, the newer
 /// `limits[]` list with Fable as a `weekly_scoped` entry, and many fields
 /// UsageBar doesn't use.
 @Suite("Claude usage endpoint")
@@ -94,7 +94,7 @@ struct ClaudeUsageEndpointTests {
         #expect(section.menuBar.claude.text == "26%")
     }
 
-    /// The status line recorded for ticket #4: 5-hour 19% and weekly 11% at
+    /// The recorded status line: 5-hour 19% and weekly 11% at
     /// 10:45:53 PM, in the same windows as the recorded response.
     func recordedStatusLine() throws -> ClaudeLimits? {
         let afterReply = try fixtureLines("claude/status-line.jsonl")[1]
@@ -145,6 +145,35 @@ struct ClaudeUsageEndpointTests {
     )
     func noAccessToken(secret: String) {
         #expect(ClaudeUsageEndpoint.accessToken(fromSecret: Data(secret.utf8)) == nil)
+    }
+
+    @Test(
+        "the plan badge comes from the saved login's rate-limit tier, else its subscription type",
+        arguments: [
+            (#"{"claudeAiOauth":{"accessToken":"fake-access","subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#, "Max 20x"),
+            (#"{"claudeAiOauth":{"accessToken":"fake-access","subscriptionType":"max","rateLimitTier":"default_claude_max_10x"}}"#, "Max 10x"),
+            (#"{"claudeAiOauth":{"accessToken":"fake-access","subscriptionType":"pro","rateLimitTier":"default_claude_ai"}}"#, "Pro"),
+            (#"{"claudeAiOauth":{"accessToken":"fake-access","subscriptionType":"team"}}"#, "Team"),
+            (#"{"claudeAiOauth":{"accessToken":"fake-access","subscriptionType":"max","rateLimitTier":42}}"#, "Max"),
+        ]
+    )
+    func plan(secret: String, plan: String) {
+        #expect(ClaudeUsageEndpoint.plan(fromSecret: Data(secret.utf8)) == plan)
+    }
+
+    @Test(
+        "a saved login without a readable plan gives no badge",
+        arguments: [
+            "",
+            "not json",
+            #"{"claudeAiOauth":{"accessToken":"fake-access"}}"#,
+            #"{"claudeAiOauth":{"accessToken":"fake-access","subscriptionType":""}}"#,
+            #"{"claudeAiOauth":{"accessToken":"fake-access","subscriptionType":null,"rateLimitTier":"default_claude_ai"}}"#,
+            #"{"subscriptionType":"max"}"#,
+        ]
+    )
+    func noPlan(secret: String) {
+        #expect(ClaudeUsageEndpoint.plan(fromSecret: Data(secret.utf8)) == nil)
     }
 
     @Test("the request is a GET to api.anthropic.com with the token, the beta header, and no caching")

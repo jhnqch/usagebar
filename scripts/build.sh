@@ -21,8 +21,6 @@ mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Helpers" "$STAGE/Contents/Reso
 cp "$BIN_DIR/UsageBar" "$STAGE/Contents/MacOS/UsageBar"
 cp "$BIN_DIR/usagebar-statusline" "$STAGE/Contents/Helpers/usagebar-statusline"
 cp Packaging/Info.plist "$STAGE/Contents/Info.plist"
-# Sample readings shown until live sources replace them.
-cp Fixtures/sample.json "$STAGE/Contents/Resources/sample.json"
 
 # Nested code first, then the bundle that seals it.
 codesign --force --sign - "$STAGE/Contents/Helpers/usagebar-statusline"

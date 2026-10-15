@@ -9,8 +9,8 @@ public struct ClaudeProvider: Provider {
     public var symbol: String { "✳" }
     public var systemImage: String { "asterisk" }
 
-    /// Claude's plan name for the badge, e.g. "Max". Neither Claude
-    /// source reports it, so the app bundles it.
+    /// Claude's plan name for the badge, e.g. "Max" or "Pro". Neither limit
+    /// source reports it; the app reads it from Claude Code's saved login.
     public var plan: String?
     /// Claude limits from the usage endpoint: the only source for Fable, and
     /// server-side, so they include the desktop app and claude.ai.

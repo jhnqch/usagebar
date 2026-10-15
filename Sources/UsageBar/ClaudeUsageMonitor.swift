@@ -74,7 +74,13 @@ final class ClaudeUsageMonitor {
         polling.start(at: Date())
 
         if token == nil {
-            token = await Self.readToken()
+            let login = await Self.readLogin()
+            token = login?.token
+            // The plan badge comes from the same saved login; the tokens
+            // stay here.
+            if let login, running {
+                model.update(ClaudeProvider.self) { $0.plan = login.plan }
+            }
         }
         // Turned off while the Keychain answered.
         guard running else {
@@ -106,10 +112,10 @@ final class ClaudeUsageMonitor {
         }
     }
 
-    /// The access token from Claude Code's Keychain item, or nil. Reading it
-    /// can show a macOS Keychain prompt; this waits for the answer off the
-    /// main thread.
-    private nonisolated static func readToken() async -> String? {
+    /// The access token and plan from Claude Code's Keychain item, or nil.
+    /// Reading it can show a macOS Keychain prompt; this waits for the
+    /// answer off the main thread.
+    private nonisolated static func readLogin() async -> (token: String?, plan: String?)? {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 let process = Process()
@@ -127,8 +133,13 @@ final class ClaudeUsageMonitor {
                 }
                 let secret = output.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
-                let token = process.terminationStatus == 0 ? ClaudeUsageEndpoint.accessToken(fromSecret: secret) : nil
-                continuation.resume(returning: token)
+                guard process.terminationStatus == 0 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: (
+                    ClaudeUsageEndpoint.accessToken(fromSecret: secret), ClaudeUsageEndpoint.plan(fromSecret: secret)
+                ))
             }
         }
     }
