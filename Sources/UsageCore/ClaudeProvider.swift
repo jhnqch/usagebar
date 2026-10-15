@@ -101,7 +101,7 @@ extension ClaudeProvider {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         plan = try? c.decodeIfPresent(String.self, forKey: .claudePlan)
         endpoint = (try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claude))
-            ?? (try? c.decodeIfPresent([Lenient<ClaudeUsagePolling.RecordedPoll>].self, forKey: .claudeUsagePolls))
+            ?? (try? c.decodeIfPresent([Lenient<RecordedPoll>].self, forKey: .claudeUsagePolls))
                 .flatMap { ClaudeUsagePolling.replay($0.compactMap(\.value)) }
         statusLine = (try? c.decodeIfPresent(ClaudeLimits.self, forKey: .claudeStatusLine))
             ?? (try? c.decodeIfPresent([ClaudeStatusLine.RecordedInput].self, forKey: .claudeStatusLineInputs))

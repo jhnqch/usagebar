@@ -10,6 +10,9 @@ public struct ProviderInfo: Sendable {
     public var name: String
     /// Whether its part shows in the menu bar until the user chooses.
     public var inMenuBarByDefault: Bool
+    /// Whether it reads an API key the user pastes in: then it's detected
+    /// once a key is saved, and the Providers menu offers a key window.
+    public var usesKey: Bool
     /// Files or directories any one of which means the provider is set up
     /// on this Mac, given the home directory and the environment.
     public var detectionPaths: @Sendable (_ home: String, _ environment: [String: String]) -> [String]
@@ -18,11 +21,13 @@ public struct ProviderInfo: Sendable {
         id: String,
         name: String,
         inMenuBarByDefault: Bool = false,
+        usesKey: Bool = false,
         detectionPaths: @escaping @Sendable (_ home: String, _ environment: [String: String]) -> [String] = { _, _ in [] }
     ) {
         self.id = id
         self.name = name
         self.inMenuBarByDefault = inMenuBarByDefault
+        self.usesKey = usesKey
         self.detectionPaths = detectionPaths
     }
 }
