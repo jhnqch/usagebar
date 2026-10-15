@@ -69,6 +69,9 @@ public struct ZaiQuota: Equatable, Sendable {
         public var resetsAt: Date?
         /// Whether a reset was given but looked wrong.
         public var resetHidden = false
+        /// Where it sat in `limits[]`: names a window whose length was
+        /// guessed from its reset, which shrinks from poll to poll.
+        public var position = 0
         /// `currentValue` (or `usage - remaining`) and `usage`.
         public var used: Double?
         public var total: Double?
@@ -82,6 +85,9 @@ public struct ZaiQuota: Equatable, Sendable {
         /// In minutes, for pace. A month is the calendar month (UTC) before
         /// the reset, or 30 days without one.
         public var minutes: Int
+        /// Guessed from how far off the reset was: the same window can look
+        /// weekly at one poll and 5-hour at the next.
+        public var guessed = false
     }
 }
 
@@ -118,8 +124,9 @@ extension ZaiPlatformAPI {
         let plan = ["level", "planName", "plan", "plan_type", "packageName"].lazy
             .compactMap { (data[$0] as? String)?.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
         var quota = ZaiQuota(plan: plan)
-        for entry in entries {
-            if let limit = limit(entry, receivedAt: receivedAt) {
+        for (position, entry) in entries.enumerated() {
+            if var limit = limit(entry, receivedAt: receivedAt) {
+                limit.position = position
                 quota.limits.append(limit)
             } else {
                 quota.unreadableEntries += 1
@@ -151,7 +158,8 @@ extension ZaiPlatformAPI {
         let percent = (counted ?? Amount.number(entry["percentage"])).map { min(max($0, 0), 100) }
         guard percent != nil || type != nil else { return nil }
 
-        let reset = Amount.number(entry["nextResetTime"]).map { Date(timeIntervalSince1970: $0 / 1000) }
+        // Epoch milliseconds; anything outside 1970 to about 2286 is junk.
+        let reset = Amount.number(entry["nextResetTime"]).flatMap { $0 > 0 && $0 < 1e13 ? Date(timeIntervalSince1970: $0 / 1000) : nil }
         let length = length(unit: entry["unit"], number: entry["number"], type: type, resetsAt: reset, receivedAt: receivedAt)
         // A reset further off than the window is long is wrong (a time zone
         // mix-up, a cached value): show the percent without it.
@@ -166,16 +174,23 @@ extension ZaiPlatformAPI {
     /// distance.
     private static func length(unit: Any?, number: Any?, type: String?, resetsAt: Date?, receivedAt: Date) -> ZaiQuota.Length? {
         let units: [Int: ZaiQuota.Length.Unit] = [1: .day, 3: .hour, 5: .month, 6: .week]
-        if let code = Amount.number(unit), let count = Amount.number(number), count >= 1, count == count.rounded(),
-           let unit = units[Int(code)] {
-            return makeLength(Int(count), unit, resetsAt: resetsAt)
+        // Whole numbers in a sane range only, so the arithmetic can't trap.
+        if let code = Amount.number(unit).flatMap({ Int(exactly: $0) }), let unit = units[code],
+           let count = Amount.number(number).flatMap({ Int(exactly: $0) }), (1...1000).contains(count) {
+            return makeLength(count, unit, resetsAt: resetsAt)
         }
         if Kind(type) == .tools { return makeLength(1, .month, resetsAt: resetsAt) }
         guard let resetsAt else { return nil }
         let distance = resetsAt.timeIntervalSince(receivedAt)
-        if distance <= 5 * 3600 + 60 { return makeLength(5, .hour, resetsAt: resetsAt) }
-        if distance <= 7 * 86400 + 60 { return makeLength(1, .week, resetsAt: resetsAt) }
-        return makeLength(1, .month, resetsAt: resetsAt)
+        var length = if distance <= 5 * 3600 + 60 {
+            makeLength(5, .hour, resetsAt: resetsAt)
+        } else if distance <= 7 * 86400 + 60 {
+            makeLength(1, .week, resetsAt: resetsAt)
+        } else {
+            makeLength(1, .month, resetsAt: resetsAt)
+        }
+        length.guessed = true
+        return length
     }
 
     private static func makeLength(_ count: Int, _ unit: ZaiQuota.Length.Unit, resetsAt: Date?) -> ZaiQuota.Length {
@@ -228,7 +243,9 @@ extension ZaiPlatformAPI {
             case let (count, unit): "\(count)-\(["h": "hour", "d": "day", "w": "week", "mo": "month"][unit.rawValue]!)"
             }
         }
-        let lengthKey = limit.length.map { "\($0.count)\($0.unit.rawValue)" } ?? "unknown"
+        // A guessed length can change between polls; the entry's place in
+        // the answer names the window instead.
+        let lengthKey = limit.length.map { $0.guessed ? "entry\(limit.position)" : "\($0.count)\($0.unit.rawValue)" } ?? "unknown"
         let label: String
         let base: String
         switch kind {

@@ -130,7 +130,9 @@ struct ZaiTests {
              { "type": "TOKENS_LIMIT", "unit": 99, "number": 5, "percentage": 50, "nextResetTime": 1791671400000 },
              { "type": "TOKENS_LIMIT", "unit": 3, "number": "lots", "percentage": 9, "nextResetTime": 1794182400000 }]
             """#)
-        #expect(section.rows.map(\.id) == ["zai.fiveHour", "zai.weekly", "zai.tokens.1mo", "zai.mcp"])
+        // A guessed length can change from poll to poll, so those windows are
+        // named by their place in the answer.
+        #expect(section.rows.map(\.id) == ["zai.tokens.entry2", "zai.tokens.entry1", "zai.tokens.entry3", "zai.mcp"])
         #expect(texts(section) == [
             "5-hour 50% · Resets in 50m (3:30 PM)",
             "Weekly 30% · Resets Mon 7:00 PM",
@@ -249,5 +251,29 @@ struct ZaiTests {
         let afterReset = fixture.now + 3 * 86400
         let stale = try #require(UsageEngine.snapshot(from: fixture.readings, now: afterReset, timeZone: fixture.timeZone)["zai"])
         #expect(texts(stale) == ["5-hour 0% · Reset Sat 4:58 PM", "Weekly 0% · Reset at 7:00 AM", "MCP tools 22% · Resets Sun 7:15 PM"])
+    }
+
+    /// Without a unit, a weekly window with six hours left looks like a
+    /// weekly one, and with four hours left like a 5-hour one: it must stay
+    /// the same window to alert memory.
+    @Test("a window whose length is inferred keeps its identity as its reset nears, so it alerts once")
+    func inferredIdentity() throws {
+        let body = #"{ "code": 200, "success": true, "data": { "limits": [{ "type": "TOKENS_LIMIT", "percentage": 95, "nextResetTime": 1791690000000 }] } }"#
+        let first = try snapshot(polls: [(200, body)])
+        #expect(first.alerts.map(\.title).count == 1)
+        let second = try snapshot(polls: [(200, body)], now: "2026-10-10T16:40:00-07:00", receivedAt: "2026-10-10T16:38:00-07:00",
+                                  memory: first.alertMemory)
+        #expect(second["zai"]?.rows.map(\.id) == first["zai"]?.rows.map(\.id))
+        #expect(second.alerts == [])
+    }
+
+    @Test("huge or fractional unit, number and reset values are ignored, never a crash")
+    func outOfRange() throws {
+        let section = try section(limits: #"""
+            [{ "type": "TOKENS_LIMIT", "unit": 3, "number": 1e20, "percentage": 50, "nextResetTime": 1791671400000 },
+             { "type": "TOKENS_LIMIT", "unit": 6, "number": 9223372036854775807, "percentage": 10, "nextResetTime": 1e300 },
+             { "type": "TOKENS_LIMIT", "unit": 1e300, "number": 1.5, "percentage": 20, "nextResetTime": -1e300 }]
+            """#)
+        #expect(texts(section) == ["5-hour 50% · Resets in 50m (3:30 PM)", "Quota 10%", "Quota 20%"])
     }
 }
