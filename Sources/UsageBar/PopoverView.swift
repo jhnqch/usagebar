@@ -128,6 +128,8 @@ private struct SectionView: View {
             ForEach(section.rows) { row in
                 switch row {
                 case let .meter(meter): MeterView(meter: meter)
+                case let .credit(credit): CreditMeterView(meter: credit)
+                case let .value(value): ValueLineView(line: value)
                 }
             }
             if let note = section.note {
@@ -222,6 +224,59 @@ private struct MeterView: View {
             .font(.system(size: 11))
             .lineLimit(1)
         }
+    }
+}
+
+/// Credit left of a total: the label and "$12.40 left of $20", a bar filled
+/// by what's used, and when it resets.
+private struct CreditMeterView: View {
+    var meter: CreditMeter
+
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let palette = Palette(scheme)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(meter.label)
+                Spacer()
+                Text(meter.valueText)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(palette.text(meter.level))
+            }
+            .font(.system(size: 12))
+            Capsule()
+                .fill(palette.track)
+                .frame(height: 6)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geo in
+                        Capsule()
+                            .fill(palette.fill(meter.level))
+                            .frame(width: geo.size.width * meter.fraction)
+                    }
+                }
+                .clipShape(Capsule())
+            if let reset = meter.resetText {
+                Text(reset).font(.system(size: 11)).foregroundStyle(palette.muted)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A balance or spend row: the label, and the amount on the right.
+private struct ValueLineView: View {
+    var line: ValueLine
+
+    var body: some View {
+        HStack {
+            Text(line.label)
+            Spacer()
+            Text(line.valueText).fontWeight(.semibold).monospacedDigit()
+        }
+        .font(.system(size: 12))
+        .accessibilityElement(children: .combine)
     }
 }
 

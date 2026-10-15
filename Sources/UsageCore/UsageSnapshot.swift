@@ -134,10 +134,16 @@ public struct ProviderSection: Equatable, Sendable, Identifiable {
     public enum Row: Equatable, Sendable, Identifiable {
         /// A limit window's meter.
         case meter(Meter)
+        /// Credit left of a total, as a meter.
+        case credit(CreditMeter)
+        /// A label and an amount.
+        case value(ValueLine)
 
         public var id: String {
             switch self {
             case let .meter(meter): meter.id
+            case let .credit(credit): credit.id
+            case let .value(value): value.id
             }
         }
     }
@@ -145,10 +151,47 @@ public struct ProviderSection: Equatable, Sendable, Identifiable {
     /// The limit windows' meters, top to bottom.
     public var meters: [Meter] {
         rows.compactMap { row in
-            switch row {
-            case let .meter(meter): meter
-            }
+            if case let .meter(meter) = row { meter } else { nil }
         }
+    }
+}
+
+/// Credit left of a total: a bar filled by what's used, coloured by level.
+public struct CreditMeter: Equatable, Sendable, Identifiable {
+    public var id: String
+    /// "Credit".
+    public var label: String
+    /// "$12.40 left of $20", "$12.40 left", or "—" without a reading.
+    public var valueText: String
+    /// Bar fill: the fraction used, 0...1.
+    public var fraction: Double
+    /// Warning from 90% used; maxed with nothing left.
+    public var level: Level
+    /// "Resets Sun 12:00 AM"; nil when the credit doesn't reset or there's
+    /// no reading.
+    public var resetText: String? = nil
+
+    public init(id: String, label: String, valueText: String, fraction: Double, level: Level, resetText: String? = nil) {
+        self.id = id
+        self.label = label
+        self.valueText = valueText
+        self.fraction = fraction
+        self.level = level
+        self.resetText = resetText
+    }
+}
+
+/// A balance or spend row: "Balance" on the left, "¥48.20" on the right.
+public struct ValueLine: Equatable, Sendable, Identifiable {
+    public var id: String
+    public var label: String
+    /// "¥48.20", or "—" without a reading.
+    public var valueText: String
+
+    public init(id: String, label: String, valueText: String) {
+        self.id = id
+        self.label = label
+        self.valueText = valueText
     }
 }
 

@@ -63,15 +63,63 @@ public struct ProviderReport: Equatable, Sendable {
         /// A limit window: a meter with pace, alerts at 90% and on reset, and
         /// a share of the menu bar part.
         case window(LimitWindow)
+        /// Credit with a total: a meter of what's used, reading
+        /// "$12.40 left of $20". No pace, no alerts, no menu bar part.
+        case credit(CreditRow)
+        /// A plain amount: "Balance ¥48.20", "This month $3.10".
+        case value(ValueRow)
     }
 
     /// The limit windows, in row order.
     var windows: [LimitWindow] {
-        rows.map { row in
-            switch row {
-            case let .window(window): window
-            }
+        rows.compactMap { row in
+            if case let .window(window) = row { window } else { nil }
         }
+    }
+}
+
+/// Credit or a balance with a known total, e.g. an API key's spending limit.
+public struct CreditRow: Equatable, Sendable {
+    /// Unique across providers, e.g. "openrouter.credit".
+    public var id: String
+    /// "Credit".
+    public var label: String
+    /// What's left; nil shows "—".
+    public var left: Amount?
+    /// The total it's left of; nil when there's none (the row then reads
+    /// "$12.40 left" over an empty bar).
+    public var total: Amount?
+    /// When the credit tops up again, if it does.
+    public var resetsAt: Date?
+
+    public init(id: String, label: String, left: Amount?, of total: Amount?, resetsAt: Date? = nil) {
+        self.id = id
+        self.label = label
+        self.left = left
+        self.total = total
+        self.resetsAt = resetsAt
+    }
+
+    func shifted(by offset: TimeInterval) -> CreditRow {
+        var copy = self
+        copy.resetsAt = resetsAt.map { $0 + offset }
+        return copy
+    }
+}
+
+/// A labelled amount: a balance, or what was spent in a period.
+public struct ValueRow: Equatable, Sendable {
+    /// Unique across providers, e.g. "deepseek.balance.CNY".
+    public var id: String
+    /// "Balance", "This month".
+    public var label: String
+    /// Nil shows "—".
+    public var value: Amount?
+
+    public init(id: String, label: String, value: Amount?) {
+        self.id = id
+        self.label = label
+        self.value = value
     }
 }
 

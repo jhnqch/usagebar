@@ -26,6 +26,14 @@ public enum UsageEngine {
             let report = provider.report(clock: clock)
             let windows = report.windows.map { $0.current(at: now) }
             let meters = windows.map { meter($0, clock: clock) }
+            var nextMeter = meters.makeIterator()
+            let rows: [ProviderSection.Row] = report.rows.map { row in
+                switch row {
+                case .window: .meter(nextMeter.next()!)
+                case let .credit(credit): .credit(creditMeter(credit, clock: clock))
+                case let .value(value): .value(ValueLine(id: value.id, label: value.label, valueText: value.value?.text ?? "—"))
+                }
+            }
             alertWindows += zip(windows, meters).map { window, meter in
                 LimitAlerts.Window(
                     id: window.id, names: .init(near: window.nearAlertName, limit: window.alertName),
@@ -46,7 +54,7 @@ public enum UsageEngine {
                 systemImage: provider.systemImage,
                 plan: report.plan,
                 updatedText: report.updatedAt.map { clock.updatedText($0) },
-                rows: meters.map { .meter($0) },
+                rows: rows,
                 note: report.note,
                 chart: report.chart
             ))
@@ -110,6 +118,24 @@ public enum UsageEngine {
             elapsed: pace?.elapsed,
             elapsedText: pace.map { "\(Int(($0.elapsed * 100).rounded()))% of window elapsed" },
             prediction: pace?.prediction
+        )
+    }
+
+    /// Credit as a meter of what's used. Without a total there's nothing to
+    /// fill the bar against; with nothing left it's maxed.
+    private static func creditMeter(_ credit: CreditRow, clock: Clock) -> CreditMeter {
+        guard let left = credit.left else {
+            return CreditMeter(id: credit.id, label: credit.label, valueText: "—", fraction: 0, level: .normal)
+        }
+        let resetText = credit.resetsAt.map { clock.resetText($0) }
+        guard let total = credit.total, total.value > 0 else {
+            return CreditMeter(id: credit.id, label: credit.label, valueText: "\(left.text) left", fraction: 0,
+                               level: left.value <= 0 ? .maxed : .normal, resetText: resetText)
+        }
+        let used = min(max(1 - left.value / total.value, 0), 1)
+        return CreditMeter(
+            id: credit.id, label: credit.label, valueText: "\(left.text) left of \(total.text)", fraction: used,
+            level: left.value <= 0 ? .maxed : Level(percent: min(used * 100, 99.99)), resetText: resetText
         )
     }
 
