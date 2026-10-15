@@ -40,8 +40,9 @@ struct ZaiTests {
             "5-hour 72% · Resets in 2h 18m (4:58 PM)",
             "Weekly 41% · Resets Tue 7:00 AM",
             // 3:15 AM UTC on Mon 2 Nov is after daylight saving ends in Los
-            // Angeles on Sun 1 Nov: 7:15 PM PST.
-            "MCP tools 22% · Resets Sun 7:15 PM",
+            // Angeles on Sun 1 Nov: 7:15 PM PST. Beyond a week, the date
+            // tells it from tomorrow.
+            "MCP tools 22% · Resets Sun Nov 1 7:15 PM",
         ])
         let meters = meters(section)
         #expect(meters.map(\.elapsedText) == ["54% of window elapsed", "62% of window elapsed", "28% of window elapsed"])
@@ -130,14 +131,14 @@ struct ZaiTests {
              { "type": "TOKENS_LIMIT", "unit": 99, "number": 5, "percentage": 50, "nextResetTime": 1791671400000 },
              { "type": "TOKENS_LIMIT", "unit": 3, "number": "lots", "percentage": 9, "nextResetTime": 1794182400000 }]
             """#)
-        // A guessed length can change from poll to poll, so those windows are
-        // named by their place in the answer.
-        #expect(section.rows.map(\.id) == ["zai.tokens.entry2", "zai.tokens.entry1", "zai.tokens.entry3", "zai.mcp"])
+        // Windows are named by kind and place in the answer, not by length,
+        // which can be guessed differently from poll to poll.
+        #expect(section.rows.map(\.id) == ["zai.tokens.1", "zai.tokens.0", "zai.tokens.2", "zai.mcp.0"])
         #expect(texts(section) == [
             "5-hour 50% · Resets in 50m (3:30 PM)",
             "Weekly 30% · Resets Mon 7:00 PM",
-            "Monthly 9% · Resets Sun 4:00 PM",
-            "MCP tools 5% · Resets Sun 4:00 PM",
+            "Monthly 9% · Resets Sun Nov 8 4:00 PM",
+            "MCP tools 5% · Resets Sun Nov 8 4:00 PM",
         ])
         // The 5-hour window started 4h10m ago; the weekly one 4d19h40m ago.
         #expect(meters(section).prefix(2).map(\.elapsedText) == ["83% of window elapsed", "69% of window elapsed"])
@@ -158,7 +159,7 @@ struct ZaiTests {
             "Daily quota 75% · Resets in 10h 20m (1:00 AM)",
         ])
         #expect(meters(section)[0].usageText == "500 of 2,000 used")
-        #expect(section.rows.map(\.id) == ["zai.tokens.2h", "zai.mcp.2w", "zai.something_new.1w", "zai.unknown.1d"])
+        #expect(section.rows.map(\.id) == ["zai.tokens.0", "zai.mcp.0", "zai.something_new.0", "zai.unknown.0"])
     }
 
     @Test("a reset further off than the window is long is hidden: the meter keeps its percent, without pace")
@@ -212,7 +213,7 @@ struct ZaiTests {
     func bigModel() throws {
         let section = try section("bigmodel", limits: #"[{ "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 10, "nextResetTime": 1791676680000 }]"#)
         #expect(section.name == "BigModel")
-        #expect(section.rows.map(\.id) == ["bigmodel.fiveHour"])
+        #expect(section.rows.map(\.id) == ["bigmodel.tokens.0"])
         #expect(ZaiAPI.hosts == ["api.z.ai"])
         #expect(BigModelAPI.hosts == ["open.bigmodel.cn"])
         let keyed = BuiltInProviders.catalog.filter(\.usesKey).map(\.name)
@@ -250,7 +251,7 @@ struct ZaiTests {
 
         let afterReset = fixture.now + 3 * 86400
         let stale = try #require(UsageEngine.snapshot(from: fixture.readings, now: afterReset, timeZone: fixture.timeZone)["zai"])
-        #expect(texts(stale) == ["5-hour 0% · Reset Sat 4:58 PM", "Weekly 0% · Reset at 7:00 AM", "MCP tools 22% · Resets Sun 7:15 PM"])
+        #expect(texts(stale) == ["5-hour 0% · Reset Sat 4:58 PM", "Weekly 0% · Reset at 7:00 AM", "MCP tools 22% · Resets Sun Nov 1 7:15 PM"])
     }
 
     /// Without a unit, a weekly window with six hours left looks like a
@@ -275,5 +276,17 @@ struct ZaiTests {
              { "type": "TOKENS_LIMIT", "unit": 1e300, "number": 1.5, "percentage": 20, "nextResetTime": -1e300 }]
             """#)
         #expect(texts(section) == ["5-hour 50% · Resets in 50m (3:30 PM)", "Quota 10%", "Quota 20%"])
+    }
+
+    @Test("a window keeps its identity when its unit and number go missing, so it alerts once")
+    func identityWithoutUnit() throws {
+        let explicit = #"{ "code": 200, "success": true, "data": { "limits": [{ "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 95, "nextResetTime": 1791676680000 }] } }"#
+        let bare = #"{ "code": 200, "success": true, "data": { "limits": [{ "type": "TOKENS_LIMIT", "percentage": 95, "nextResetTime": 1791676680000 }] } }"#
+        let first = try snapshot(polls: [(200, explicit)])
+        #expect(first.alerts.count == 1)
+        let second = try snapshot(polls: [(200, bare)], now: "2026-10-10T14:50:00-07:00", receivedAt: "2026-10-10T14:48:00-07:00",
+                                  memory: first.alertMemory)
+        #expect(second["zai"]?.rows.map(\.id) == first["zai"]?.rows.map(\.id))
+        #expect(second.alerts == [])
     }
 }

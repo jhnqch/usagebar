@@ -44,7 +44,7 @@ struct BalanceRowTests {
         #expect(meter.valueText == "$12.40 left of $20")
         #expect(abs(meter.fraction - 0.38) < 1e-9)
         #expect(meter.level == .normal)
-        #expect(meter.resetText == "Resets Sun 12:00 AM")
+        #expect(meter.resetText == "Resets Sun Nov 1 12:00 AM")
     }
 
     @Test("a credit row warns from 90% used and is maxed with nothing left", arguments: [

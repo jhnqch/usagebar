@@ -36,17 +36,25 @@ public struct Clock: Sendable {
     func resetText(_ resetsAt: Date) -> String {
         let distance = resetsAt.timeIntervalSince(now)
         if distance <= 0 {
-            return -distance < Self.day ? "Reset at \(format(resetsAt, "h:mm a"))" : "Reset \(format(resetsAt, "EEE h:mm a"))"
+            return -distance < Self.day ? "Reset at \(format(resetsAt, "h:mm a"))" : "Reset \(format(resetsAt, "\(dayPattern(resetsAt)) h:mm a"))"
         }
         return distance < Self.day
             ? "Resets in \(countdown(to: resetsAt)) (\(format(resetsAt, "h:mm a")))"
-            : "Resets \(format(resetsAt, "EEE h:mm a"))"
+            : "Resets \(format(resetsAt, "\(dayPattern(resetsAt)) h:mm a"))"
+    }
+
+    /// The day part of a time's format: the weekday ("EEE"), or with the
+    /// date ("EEE MMM d", "Sun Nov 1") more than a week away, where the
+    /// weekday alone would read as within the week. Weekly windows reset
+    /// within a week, so only longer ones (monthly) show the date.
+    private func dayPattern(_ date: Date) -> String {
+        abs(date.timeIntervalSince(now)) > 7 * Self.day ? "EEE MMM d" : "EEE"
     }
 
     /// "4:58 PM" on today's date, "Tue 7:00 AM" on another: a time that
     /// stays right in a notification read later.
     func time(_ date: Date) -> String {
-        format(date, calendar.isDate(date, inSameDayAs: now) ? "h:mm a" : "EEE h:mm a")
+        format(date, calendar.isDate(date, inSameDayAs: now) ? "h:mm a" : "\(dayPattern(date)) h:mm a")
     }
 
     /// "Updated just now", "Updated 3 min ago", "Updated at 11:05 AM" (today),
@@ -66,20 +74,20 @@ public struct Clock: Sendable {
     /// another day. Rounds on the local clock, so a time zone off the hour
     /// still lands on :00 or :05.
     func approximately(_ date: Date) -> (date: Date, text: String) {
-        guard let hour = calendar.dateInterval(of: .hour, for: date) else { return (date, format(date, "EEE h:mm a")) }
+        guard let hour = calendar.dateInterval(of: .hour, for: date) else { return (date, format(date, "\(dayPattern(date)) h:mm a")) }
         let minutes = date.timeIntervalSince(hour.start) / 60
         let nearestFive = hour.start + (minutes / 5).rounded() * 5 * 60
         if calendar.isDate(nearestFive, inSameDayAs: now) {
             return (nearestFive, format(nearestFive, "h:mm a"))
         }
         let nearestHour = minutes < 30 ? hour.start : hour.end
-        return (nearestHour, format(nearestHour, "EEE h a"))
+        return (nearestHour, format(nearestHour, "\(dayPattern(nearestHour)) h a"))
     }
 
     /// "Tue 7 AM", or "Tue 7:30 AM" off the hour.
     func dayAndHour(_ date: Date) -> String {
         let minute = calendar.component(.minute, from: date)
-        return format(date, minute == 0 ? "EEE h a" : "EEE h:mm a")
+        return format(date, minute == 0 ? "\(dayPattern(date)) h a" : "\(dayPattern(date)) h:mm a")
     }
 
     /// "Wed Oct 7".

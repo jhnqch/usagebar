@@ -29,7 +29,7 @@ struct KeyFixtureTests {
         #expect(section.plan == "Prepaid")
         #expect(section.updatedText == "Updated 2 min ago")
         #expect(texts(section) == [
-            "Credit $12.40 left of $20 · Resets Sun 12:00 AM",
+            "Credit $12.40 left of $20 · Resets Sun Nov 1 12:00 AM",
             "Today $0.85",
             "This month $3.10",
             "Balance ¥48.20",
@@ -86,7 +86,7 @@ struct KeyFixtureTests {
         let later = fixture.now + 86400
         let section = try #require(UsageEngine.snapshot(from: fixture.readings(rebasedTo: later), now: later, timeZone: fixture.timeZone)["example"])
         #expect(section.updatedText == "Updated 2 min ago")
-        #expect(texts(section).first == "Credit $12.40 left of $20 · Resets Sun 11:00 PM")
+        #expect(texts(section).first == "Credit $12.40 left of $20 · Resets Sun Nov 1 11:00 PM")
     }
 
     @Test("no fixture holds anything that looks like a key or an Authorization header")

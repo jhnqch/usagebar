@@ -69,9 +69,11 @@ public struct ZaiQuota: Equatable, Sendable {
         public var resetsAt: Date?
         /// Whether a reset was given but looked wrong.
         public var resetHidden = false
-        /// Where it sat in `limits[]`: names a window whose length was
-        /// guessed from its reset, which shrinks from poll to poll.
-        public var position = 0
+        /// Its place among the answer's entries of the same kind, in the
+        /// answer's order: names its window, which must stay the same from
+        /// poll to poll even when its length is guessed (from a reset that
+        /// draws nearer) or its unit goes missing.
+        public var ordinal = 0
         /// `currentValue` (or `usage - remaining`) and `usage`.
         public var used: Double?
         public var total: Double?
@@ -85,9 +87,6 @@ public struct ZaiQuota: Equatable, Sendable {
         /// In minutes, for pace. A month is the calendar month (UTC) before
         /// the reset, or 30 days without one.
         public var minutes: Int
-        /// Guessed from how far off the reset was: the same window can look
-        /// weekly at one poll and 5-hour at the next.
-        public var guessed = false
     }
 }
 
@@ -124,9 +123,12 @@ extension ZaiPlatformAPI {
         let plan = ["level", "planName", "plan", "plan_type", "packageName"].lazy
             .compactMap { (data[$0] as? String)?.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
         var quota = ZaiQuota(plan: plan)
-        for (position, entry) in entries.enumerated() {
+        var counts: [String: Int] = [:]
+        for entry in entries {
             if var limit = limit(entry, receivedAt: receivedAt) {
-                limit.position = position
+                let key = idBase(limit.type)
+                limit.ordinal = counts[key, default: 0]
+                counts[key] = limit.ordinal + 1
                 quota.limits.append(limit)
             } else {
                 quota.unreadableEntries += 1
@@ -136,6 +138,16 @@ extension ZaiPlatformAPI {
             (rank(a.element), a.offset) < (rank(b.element), b.offset)
         }.map(\.element)
         return quota
+    }
+
+    /// What a window's id starts with after the provider's: "tokens",
+    /// "mcp", or the unknown type's name.
+    private static func idBase(_ type: String?) -> String {
+        switch Kind(type) {
+        case .prompts: "tokens"
+        case .tools: "mcp"
+        case .other: (type ?? "unknown").lowercased()
+        }
     }
 
     /// Prompt windows first, shortest first; then MCP, then anything else.
@@ -182,15 +194,13 @@ extension ZaiPlatformAPI {
         if Kind(type) == .tools { return makeLength(1, .month, resetsAt: resetsAt) }
         guard let resetsAt else { return nil }
         let distance = resetsAt.timeIntervalSince(receivedAt)
-        var length = if distance <= 5 * 3600 + 60 {
+        return if distance <= 5 * 3600 + 60 {
             makeLength(5, .hour, resetsAt: resetsAt)
         } else if distance <= 7 * 86400 + 60 {
             makeLength(1, .week, resetsAt: resetsAt)
         } else {
             makeLength(1, .month, resetsAt: resetsAt)
         }
-        length.guessed = true
-        return length
     }
 
     private static func makeLength(_ count: Int, _ unit: ZaiQuota.Length.Unit, resetsAt: Date?) -> ZaiQuota.Length {
@@ -209,8 +219,8 @@ extension ZaiPlatformAPI {
     public static func report(_ reading: ZaiQuota?, clock: Clock) -> ProviderReport {
         guard let reading, !reading.limits.isEmpty else {
             let rows: [ProviderReport.Row] = [
-                .window(LimitWindow(id: "\(id).fiveHour", label: "5-hour", minutes: 300, reading: nil, alertName: "\(name) 5-hour limit")),
-                .window(LimitWindow(id: "\(id).weekly", label: "Weekly", minutes: 10080, reading: nil, alertName: "\(name) weekly limit")),
+                .window(LimitWindow(id: "\(id).tokens.0", label: "5-hour", minutes: 300, reading: nil, alertName: "\(name) 5-hour limit")),
+                .window(LimitWindow(id: "\(id).tokens.1", label: "Weekly", minutes: 10080, reading: nil, alertName: "\(name) weekly limit")),
             ]
             let note: String? = switch reading {
             case nil: nil
@@ -243,26 +253,14 @@ extension ZaiPlatformAPI {
             case let (count, unit): "\(count)-\(["h": "hour", "d": "day", "w": "week", "mo": "month"][unit.rawValue]!)"
             }
         }
-        // A guessed length can change between polls; the entry's place in
-        // the answer names the window instead.
-        let lengthKey = limit.length.map { $0.guessed ? "entry\(limit.position)" : "\($0.count)\($0.unit.rawValue)" } ?? "unknown"
-        let label: String
-        let base: String
-        switch kind {
-        case .prompts:
-            label = lengthName ?? "Quota"
-            base = switch lengthKey {
-            case "5h": "fiveHour"
-            case "1w": "weekly"
-            default: "tokens.\(lengthKey)"
-            }
-        case .tools:
-            label = lengthKey == "1mo" || lengthName == nil ? "MCP tools" : "MCP tools · \(lengthName!)"
-            base = lengthKey == "1mo" ? "mcp" : "mcp.\(lengthKey)"
-        case .other:
-            label = lengthName.map { "\($0) quota" } ?? "Quota"
-            base = "\((limit.type ?? "unknown").lowercased()).\(lengthKey)"
+        let lengthKey = limit.length.map { "\($0.count)\($0.unit.rawValue)" }
+        let label = switch kind {
+        case .prompts: lengthName ?? "Quota"
+        case .tools: lengthKey == "1mo" || lengthName == nil ? "MCP tools" : "MCP tools · \(lengthName!)"
+        case .other: lengthName.map { "\($0) quota" } ?? "Quota"
         }
+        // Known by kind and place, not length, which can be guessed.
+        let base = "\(idBase(limit.type)).\(limit.ordinal)"
         var windowID = "\(id).\(base)"
         var suffix = 2
         while !ids.insert(windowID).inserted {

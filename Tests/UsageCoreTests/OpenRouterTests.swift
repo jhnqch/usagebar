@@ -47,7 +47,7 @@ struct OpenRouterTests {
         #expect(section.plan == nil)
         #expect(section.updatedText == "Updated 2 min ago")
         #expect(texts(section) == [
-            "Key limit $12.40 left of $20 · Resets Sat 5:00 PM",
+            "Key limit $12.40 left of $20 · Resets Sat Oct 31 5:00 PM",
             "Today $0.85",
             "This week $4.20",
             "This month $7.60",
@@ -84,9 +84,9 @@ struct OpenRouterTests {
     func budgets() throws {
         let section = try #require(try snapshot("openrouter-budgets")["openrouter"])
         #expect(texts(section) == [
-            "Key limit $12.40 left of $20 · Resets Sat 5:00 PM",
+            "Key limit $12.40 left of $20 · Resets Sat Oct 31 5:00 PM",
             "Daily key budget 92% · Resets in 2h 20m (5:00 PM) · $9.20 of $10 spent",
-            "Monthly workspace budget 30% · Resets Sat 5:00 PM · $61.50 of $200 spent",
+            "Monthly workspace budget 30% · Resets Sat Oct 31 5:00 PM · $61.50 of $200 spent",
             "Member budget $38 left of $50",
             "Today $0.85",
             "This week $4.20",
@@ -113,7 +113,7 @@ struct OpenRouterTests {
             "Key limit —",
             "Weekly key budget —",
             "Budget $30 left of $40",
-            "Workspace budget 25% · Resets Sat 5:00 PM · $25 of $100 spent",
+            "Workspace budget 25% · Resets Sat Oct 31 5:00 PM · $25 of $100 spent",
             "Today —",
             "This week $4.20",
             "This month —",
@@ -151,9 +151,9 @@ struct OpenRouterTests {
         let section = try #require(UsageEngine.snapshot(from: fixture.readings(rebasedTo: later), now: later, timeZone: fixture.timeZone)["openrouter"])
         #expect(section.updatedText == "Updated 2 min ago")
         #expect(texts(section).prefix(3) == [
-            "Key limit $12.40 left of $20 · Resets Sun 4:00 PM",
+            "Key limit $12.40 left of $20 · Resets Sun Nov 1 4:00 PM",
             "Daily key budget 92% · Resets in 2h 20m (5:00 PM) · $9.20 of $10 spent",
-            "Monthly workspace budget 30% · Resets Sun 4:00 PM · $61.50 of $200 spent",
+            "Monthly workspace budget 30% · Resets Sun Nov 1 4:00 PM · $61.50 of $200 spent",
         ])
     }
 
