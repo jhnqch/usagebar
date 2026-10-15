@@ -439,6 +439,18 @@ struct KeyPollerTests {
         #expect(due(poller, .popover) == 0)
     }
 
+    @Test("a new key drops the old key's reading: a failure on the new key doesn't show the old balance")
+    func keyChangedClearsReading() async throws {
+        let transport = FakeTransport(.response(status: 200, body: goodBody))
+        let poller = poller(transport: transport)
+        await poller.poll(.timer)
+        poller.keyChanged()
+        #expect(poller.provider == KeyProvider<TestKeyAPI>())
+        transport.answer(.networkError)
+        await poller.poll(.popover)
+        #expect(creditText(try section(poller)) == "—")
+    }
+
     @Test("an answer that arrives after stop() is dropped")
     func stopDropsAnswer() async throws {
         let transport = GateTransport()

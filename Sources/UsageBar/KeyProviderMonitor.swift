@@ -67,6 +67,8 @@ final class KeyProviderMonitor<API: KeyAPI>: KeyMonitoring {
 
     func keyChanged() {
         poller.keyChanged()
+        let provider = poller.provider
+        model.update(KeyProvider<API>.self) { $0 = provider }
         refresh()
     }
 

@@ -73,11 +73,6 @@ public struct PollSchedule: Equatable, Sendable {
         notBefore = nil
     }
 
-    /// Forgets everything: the next poll is due at once.
-    public mutating func reset() {
-        self = PollSchedule()
-    }
-
     /// A `Retry-After` header as a wait in seconds from `now`: either whole
     /// seconds (`120`) or an HTTP date (`Sun, 11 Oct 2026 07:28:00 GMT`; 0
     /// once passed). Nil when it's neither.

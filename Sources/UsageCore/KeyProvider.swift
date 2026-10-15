@@ -282,11 +282,6 @@ struct KeyPolling<API: KeyAPI>: Sendable {
         schedule.start(at: now)
     }
 
-    /// The next poll is due at once.
-    mutating func reset() {
-        schedule.reset()
-    }
-
     @discardableResult
     mutating func finish(_ outcome: PollOutcome, at now: Date) -> Finished {
         switch outcome {
@@ -426,12 +421,14 @@ public final class KeyPoller<API: KeyAPI> {
     }
 
     /// The key was saved or removed: forget the one in memory, drop any
-    /// answer under way, and poll at once.
+    /// answer under way and the old key's reading (keeping the last good
+    /// reading applies only to the same key), and poll at once.
     public func keyChanged() {
         key = nil
         generation += 1
         inFlight = false
-        polling.reset()
+        polling = KeyPolling<API>()
+        provider = polling.provider
     }
 
     /// The provider was turned off: forget the key and drop any answer
