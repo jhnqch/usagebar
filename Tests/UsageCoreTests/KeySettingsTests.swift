@@ -17,7 +17,8 @@ private final class Defaults: KeyValueStore {
 /// How a key provider is detected and listed in the Providers menu.
 @Suite("Key provider settings")
 struct KeySettingsTests {
-    let catalog = BuiltInProviders.catalog + [TestKeyAPI.info]
+    // Claude and Codex, not the shipped catalog, so adding a key provider leaves these alone.
+    let catalog = [ClaudeProvider.info, CodexProvider.info, TestKeyAPI.info]
 
     func detected(_ store: MemoryKeyStore) -> Set<String> {
         ProviderDetection.detected(catalog, fileSystem: NoFiles(), home: "/Users/test", environment: [:], keys: store)

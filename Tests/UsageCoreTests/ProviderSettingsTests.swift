@@ -64,7 +64,8 @@ private final class FakeDefaults: KeyValueStore {
 /// A provider with no limit windows by default in the menu bar, as a key
 /// provider will be.
 private let keyInfo = ProviderInfo(id: "key", name: "Key")
-private let catalog = BuiltInProviders.catalog + [keyInfo]
+// Claude and Codex, not the shipped catalog, so adding a key provider leaves these alone.
+private let catalog = [ClaudeProvider.info, CodexProvider.info, keyInfo]
 
 @Suite("Provider settings")
 struct ProviderSettingsTests {
