@@ -4,3 +4,11 @@
 .DS_Store
 xcuserdata/
 __pycache__/
+
+# Maintainer-only files. They are tracked in the private workspace and kept
+# out of the public repo; these rules keep local copies untracked there.
+PLAN.md
+STATUS.md
+.claude/
+docs/agents/
+AGENTS.local.md
