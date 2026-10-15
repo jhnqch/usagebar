@@ -70,4 +70,31 @@ struct KeySettingsTests {
         #expect(!defaults.values.isEmpty)
         #expect(!"\(defaults.values)".contains(fakeKey))
     }
+
+    @Test("a provider's option is off until turned on, and the choice is saved and read back")
+    func options() {
+        let option = KeyOption(id: "extra", title: "Extra meter", detail: "Uses an undocumented endpoint")
+        let info = ProviderInfo(id: "optioned", name: "Optioned", usesKey: true, options: [option])
+        let catalog = catalog + [info]
+        var settings = ProviderSettings()
+        #expect(settings.enabledOptions(for: "optioned").isEmpty)
+        #expect(settings.menuItems(catalog, detected: ["optioned"]).last?.options
+            == [ProviderMenuItem.Option(id: "extra", title: "Extra meter", detail: "Uses an undocumented endpoint", isOn: false)])
+        #expect(settings.menuItems(catalog, detected: ["optioned"]).first?.options == [])
+
+        settings.setOption(true, "extra", for: "optioned")
+        #expect(settings.enabledOptions(for: "optioned") == ["extra"])
+        #expect(settings.menuItems(catalog, detected: ["optioned"]).last?.options.map(\.isOn) == [true])
+
+        let defaults = Defaults()
+        settings.save(to: defaults)
+        #expect(defaults.values["providers.optioned.options.extra"] as? Bool == true)
+        let loaded = ProviderSettings(loadingFrom: defaults, catalog: catalog)
+        #expect(loaded == settings)
+        #expect(loaded.enabledOptions(for: "optioned") == ["extra"])
+
+        settings.setOption(false, "extra", for: "optioned")
+        settings.save(to: defaults)
+        #expect(ProviderSettings(loadingFrom: defaults, catalog: catalog).enabledOptions(for: "optioned").isEmpty)
+    }
 }

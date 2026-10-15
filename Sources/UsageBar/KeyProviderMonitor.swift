@@ -13,6 +13,8 @@ protocol KeyMonitoring: AnyObject {
     func refresh()
     /// The key was saved or removed: poll again at once.
     func keyChanged()
+    /// The provider's options that are on: polls again at once if they changed.
+    func setOptions(_ ids: Set<String>)
     func testConnection(key: String?) async -> ConnectionTest
 }
 
@@ -69,6 +71,12 @@ final class KeyProviderMonitor<API: KeyAPI>: KeyMonitoring {
         poller.keyChanged()
         let provider = poller.provider
         model.update(KeyProvider<API>.self) { $0 = provider }
+        refresh()
+    }
+
+    func setOptions(_ ids: Set<String>) {
+        guard ids.intersection(API.options.map(\.id)) != poller.options else { return }
+        poller.setOptions(ids)
         refresh()
     }
 

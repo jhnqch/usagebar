@@ -16,6 +16,8 @@ final class AppModel {
     @ObservationIgnored var onAlerts: (([LimitAlert]) -> Void)?
     /// Which providers are on changed: start or stop their monitors.
     @ObservationIgnored var onSelectionChange: ((ProviderSelection) -> Void)?
+    /// A provider's options changed: (provider id, the ids of those on).
+    @ObservationIgnored var onOptionsChange: ((String, Set<String>) -> Void)?
     /// The Providers menu's rows.
     private(set) var providerItems: [ProviderMenuItem] = []
     private(set) var selection: ProviderSelection
@@ -51,6 +53,18 @@ final class AppModel {
     func setInMenuBar(_ isOn: Bool, for id: String) {
         settings.setInMenuBar(isOn, for: id)
         settingsChanged()
+    }
+
+    /// Turns a provider's option on or off from the Providers menu.
+    func setOption(_ isOn: Bool, _ option: String, for id: String) {
+        settings.setOption(isOn, option, for: id)
+        settingsChanged()
+        onOptionsChange?(id, settings.enabledOptions(for: id))
+    }
+
+    /// The ids of a provider's options that are on.
+    func enabledOptions(for id: String) -> Set<String> {
+        settings.enabledOptions(for: id)
     }
 
     /// Looks for newly installed or removed providers, e.g. when the

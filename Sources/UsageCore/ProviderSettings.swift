@@ -15,6 +15,8 @@ public struct ProviderInfo: Sendable {
     public var usesKey: Bool
     /// Whether its rows are limit windows, which a menu bar part shows.
     public var hasWindows: Bool
+    /// Choices the Providers menu offers for it, each off by default.
+    public var options: [KeyOption]
     /// Files or directories any one of which means the provider is set up
     /// on this Mac, given the home directory and the environment.
     public var detectionPaths: @Sendable (_ home: String, _ environment: [String: String]) -> [String]
@@ -25,6 +27,7 @@ public struct ProviderInfo: Sendable {
         inMenuBarByDefault: Bool = false,
         usesKey: Bool = false,
         hasWindows: Bool = false,
+        options: [KeyOption] = [],
         detectionPaths: @escaping @Sendable (_ home: String, _ environment: [String: String]) -> [String] = { _, _ in [] }
     ) {
         self.id = id
@@ -32,6 +35,7 @@ public struct ProviderInfo: Sendable {
         self.inMenuBarByDefault = inMenuBarByDefault
         self.usesKey = usesKey
         self.hasWindows = hasWindows
+        self.options = options
         self.detectionPaths = detectionPaths
     }
 }
@@ -75,6 +79,8 @@ public struct ProviderSettings: Equatable, Sendable {
     public private(set) var enabled: [String: Bool] = [:]
     /// Explicit "Show in menu bar" choices by provider id.
     public private(set) var inMenuBar: [String: Bool] = [:]
+    /// Explicit choices for providers' options, by provider id and option id.
+    public private(set) var options: [String: [String: Bool]] = [:]
 
     public init() {}
 
@@ -84,6 +90,15 @@ public struct ProviderSettings: Equatable, Sendable {
 
     public mutating func setInMenuBar(_ isOn: Bool, for id: String) {
         inMenuBar[id] = isOn
+    }
+
+    public mutating func setOption(_ isOn: Bool, _ option: String, for id: String) {
+        options[id, default: [:]][option] = isOn
+    }
+
+    /// The ids of a provider's options that are on: those the user turned on.
+    public func enabledOptions(for id: String) -> Set<String> {
+        Set((options[id] ?? [:]).filter(\.value).keys)
     }
 
     /// Which providers are on, in `catalog` order, and which of those show
@@ -113,7 +128,11 @@ public struct ProviderSettings: Equatable, Sendable {
                 isOn: selection.enabled.contains(info.id),
                 inMenuBar: selection.menuBar.contains(info.id),
                 detail: detected.contains(info.id) ? nil : info.usesKey ? "No API key saved" : "Not found on this Mac",
-                key: info.usesKey ? (detected.contains(info.id) ? .saved : .missing) : nil
+                key: info.usesKey ? (detected.contains(info.id) ? .saved : .missing) : nil,
+                options: info.options.map { option in
+                    ProviderMenuItem.Option(id: option.id, title: option.title, detail: option.detail,
+                                            isOn: options[info.id]?[option.id] ?? false)
+                }
             )
         }
     }
@@ -122,6 +141,7 @@ public struct ProviderSettings: Equatable, Sendable {
 
     private static func enabledKey(_ id: String) -> String { "providers.\(id).enabled" }
     private static func inMenuBarKey(_ id: String) -> String { "providers.\(id).inMenuBar" }
+    private static func optionKey(_ id: String, _ option: String) -> String { "providers.\(id).options.\(option)" }
 
     /// The choices saved in `store` for the providers in `catalog`. A
     /// missing or mistyped value reads as no choice.
@@ -129,6 +149,11 @@ public struct ProviderSettings: Equatable, Sendable {
         for info in catalog {
             enabled[info.id] = store.object(forKey: Self.enabledKey(info.id)) as? Bool
             inMenuBar[info.id] = store.object(forKey: Self.inMenuBarKey(info.id)) as? Bool
+            for option in info.options {
+                if let isOn = store.object(forKey: Self.optionKey(info.id, option.id)) as? Bool {
+                    options[info.id, default: [:]][option.id] = isOn
+                }
+            }
         }
     }
 
@@ -139,6 +164,11 @@ public struct ProviderSettings: Equatable, Sendable {
         }
         for (id, isOn) in inMenuBar {
             store.set(isOn, forKey: Self.inMenuBarKey(id))
+        }
+        for (id, choices) in options {
+            for (option, isOn) in choices {
+                store.set(isOn, forKey: Self.optionKey(id, option))
+            }
         }
     }
 }
@@ -168,6 +198,22 @@ public struct ProviderMenuItem: Equatable, Sendable, Identifiable {
     public var detail: String?
     /// For a key provider, whether its key is saved; nil for the others.
     public var key: KeyStatus? = nil
+    /// The provider's options, with whether each is on.
+    public var options: [Option] = []
+
+    public struct Option: Equatable, Sendable, Identifiable {
+        public var id: String
+        public var title: String
+        public var detail: String?
+        public var isOn: Bool
+
+        public init(id: String, title: String, detail: String?, isOn: Bool) {
+            self.id = id
+            self.title = title
+            self.detail = detail
+            self.isOn = isOn
+        }
+    }
 
     public enum KeyStatus: Equatable, Sendable {
         case saved, missing

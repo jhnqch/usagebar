@@ -66,6 +66,28 @@ public protocol KeyAPI: Sendable {
     /// Whether its rows are limit windows: then, with Claude and Codex not
     /// on, it's the one the menu bar shows by default. Defaults to false.
     static var hasLimitWindows: Bool { get }
+    /// Choices the Providers menu offers for it, each off until the user
+    /// turns it on. `fetch` sees the ids of those on in `client.options`.
+    /// Defaults to none.
+    static var options: [KeyOption] { get }
+}
+
+/// A choice a key provider offers in the Providers menu, off by default:
+/// GitHub Copilot's "Premium requests meter", which reads an undocumented
+/// endpoint.
+public struct KeyOption: Equatable, Sendable {
+    /// Stable: names the saved setting.
+    public var id: String
+    /// The menu item's title.
+    public var title: String
+    /// A line under it: "Uses an undocumented GitHub endpoint".
+    public var detail: String?
+
+    public init(id: String, title: String, detail: String? = nil) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+    }
 }
 
 extension KeyAPI {
@@ -75,10 +97,11 @@ extension KeyAPI {
     public static var keyHint: String? { nil }
     public static func interpret(_ outcome: PollOutcome) -> PollOutcome { outcome }
     public static var hasLimitWindows: Bool { false }
+    public static var options: [KeyOption] { [] }
 
     /// What the Providers menu and detection know about it: a key
     /// provider, shown once its key is saved.
-    public static var info: ProviderInfo { ProviderInfo(id: id, name: name, usesKey: true, hasWindows: hasLimitWindows) }
+    public static var info: ProviderInfo { ProviderInfo(id: id, name: name, usesKey: true, hasWindows: hasLimitWindows, options: options) }
 
     /// The provider with no readings yet, for the app's starting readings.
     public static var emptyProvider: any Provider { KeyProvider<Self>() }
@@ -107,13 +130,19 @@ public protocol HTTPTransport: Sendable {
 /// request anywhere else comes back `.blocked` without being sent. The key
 /// itself is never exposed.
 public struct KeyClient: Sendable {
+    /// When the poll began, for requests that name a period ("this month").
+    public let startedAt: Date
+    /// The ids of the provider's `options` the user turned on.
+    public let options: Set<String>
     private let key: String
     private let hosts: Set<String>
     private let authorization: String
     private let userAgent: String
     private let transport: any HTTPTransport
 
-    init<API: KeyAPI>(_ api: API.Type, key: String, transport: any HTTPTransport, userAgent: String) {
+    init<API: KeyAPI>(_ api: API.Type, key: String, transport: any HTTPTransport, userAgent: String, startedAt: Date, options: Set<String> = []) {
+        self.startedAt = startedAt
+        self.options = options
         self.key = key
         hosts = Set(API.hosts.map { $0.lowercased() })
         authorization = API.authorization(key: key)
@@ -122,7 +151,8 @@ public struct KeyClient: Sendable {
     }
 
     /// GETs `url` with the key. `headers` may add anything but
-    /// `Authorization`, `Cookie` or `Proxy-Authorization`.
+    /// `Authorization`, `Cookie` or `Proxy-Authorization`; `Accept` defaults
+    /// to `application/json`.
     public func get(_ url: URL, headers: [String: String] = [:]) async -> PollOutcome {
         guard url.scheme?.lowercased() == "https" else { return .blocked("not https: \(url.host ?? "no host")") }
         guard let host = url.host?.lowercased(), hosts.contains(host) else {
@@ -138,10 +168,10 @@ public struct KeyClient: Sendable {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 30)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         for (name, value) in headers {
             request.setValue(value, forHTTPHeaderField: name)
         }
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(authorization, forHTTPHeaderField: "Authorization")
         return await transport.send(request)
@@ -371,6 +401,8 @@ public final class KeyPoller<API: KeyAPI> {
     public private(set) var provider = KeyProvider<API>()
 
     private var polling = KeyPolling<API>()
+    /// The ids of the API's options that are on.
+    public private(set) var options: Set<String> = []
     private var key: String?
     private var inFlight = false
     /// Bumped by `stop()` and `keyChanged()`: an answer to a request from an
@@ -419,7 +451,7 @@ public final class KeyPoller<API: KeyAPI> {
             key = read
         }
         let outcome: PollOutcome = if let key {
-            await API.fetch(KeyClient(API.self, key: key, transport: transport, userAgent: userAgent))
+            await API.fetch(KeyClient(API.self, key: key, transport: transport, userAgent: userAgent, startedAt: now(), options: options))
         } else {
             .noCredentials
         }
@@ -445,6 +477,18 @@ public final class KeyPoller<API: KeyAPI> {
         provider = polling.provider
     }
 
+    /// The options that are on changed: drop any answer under way (it was
+    /// asked with the old ones) and poll at once. The reading stays until
+    /// the next answer replaces it. Ids the API doesn't offer are ignored.
+    public func setOptions(_ ids: Set<String>) {
+        let offered = ids.intersection(API.options.map(\.id))
+        guard offered != options else { return }
+        options = offered
+        generation += 1
+        inFlight = false
+        polling.restartSchedule()
+    }
+
     /// The provider was turned off: forget the key, drop any answer under
     /// way, and end any back-off, so turning it back on polls at once.
     public func stop() {
@@ -466,7 +510,7 @@ public final class KeyPoller<API: KeyAPI> {
         } else {
             return .noKey
         }
-        let outcome = await API.fetch(KeyClient(API.self, key: candidate, transport: transport, userAgent: userAgent))
+        let outcome = await API.fetch(KeyClient(API.self, key: candidate, transport: transport, userAgent: userAgent, startedAt: now(), options: options))
         switch API.interpret(outcome) {
         case let .response(200, body, _):
             return API.reading(fromResponse: body, receivedAt: now()) == nil

@@ -3,7 +3,8 @@ import UsageCore
 
 /// The Providers menu, popped up from the popover's footer: a section per
 /// provider with "Show <name>" and "Show in menu bar", and for a key
-/// provider "API key…", which opens its key window. `ProviderSettings.menuItems` decides
+/// provider "API key…", which opens its key window, and its options (GitHub
+/// Copilot's premium requests meter). `ProviderSettings.menuItems` decides
 /// the rows; this only builds the menu and forwards the clicks.
 @MainActor
 enum ProvidersMenu {
@@ -12,6 +13,8 @@ enum ProvidersMenu {
         var setInMenuBar: (Bool, String) -> Void
         /// Opens the key window of the provider with this id.
         var editKey: (String) -> Void = { _ in }
+        /// Turns an option (its id) of a provider (its id) on or off.
+        var setOption: (Bool, String, String) -> Void = { _, _, _ in }
     }
 
     static func make(_ items: [ProviderMenuItem], actions: Actions) -> NSMenu {
@@ -36,6 +39,14 @@ enum ProvidersMenu {
                 let edit = ClosureMenuItem(title: "API key…") { actions.editKey(item.id) }
                 edit.subtitle = key == .saved ? "Saved in your Keychain" : "Not set"
                 menu.addItem(edit)
+            }
+
+            for option in item.options {
+                let toggle = ClosureMenuItem(title: option.title) { actions.setOption(!option.isOn, option.id, item.id) }
+                toggle.state = option.isOn ? .on : .off
+                toggle.subtitle = option.detail
+                toggle.isEnabled = item.isOn
+                menu.addItem(toggle)
             }
         }
         return menu

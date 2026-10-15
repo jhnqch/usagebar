@@ -36,7 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let transport = URLSessionTransport()
         keyMonitors = Dictionary(uniqueKeysWithValues: BuiltInProviders.keyAPIs.map { api in
-            (api.id, api.monitor(model: model, store: model.environment.keys, transport: transport))
+            let monitor = api.monitor(model: model, store: model.environment.keys, transport: transport)
+            monitor.setOptions(model.enabledOptions(for: api.id))
+            return (api.id, monitor)
         })
     }
 
@@ -52,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onEditKey: { [weak self] id in self?.editKey(id) }
         ))
         model.onSelectionChange = { [weak self] selection in self?.run(selection) }
+        model.onOptionsChange = { [weak self] id, options in self?.keyMonitors[id]?.setOptions(options) }
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
         popover.behavior = .transient
@@ -218,7 +221,8 @@ private struct PopoverHost: View {
                 ProvidersMenu.make(model.providerItems, actions: ProvidersMenu.Actions(
                     setEnabled: { model.setEnabled($0, for: $1) },
                     setInMenuBar: { model.setInMenuBar($0, for: $1) },
-                    editKey: onEditKey
+                    editKey: onEditKey,
+                    setOption: { model.setOption($0, $1, for: $2) }
                 )).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
             },
             onRefresh: onRefresh,

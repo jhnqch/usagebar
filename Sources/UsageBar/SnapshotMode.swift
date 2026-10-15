@@ -32,6 +32,12 @@ enum SnapshotMode {
         for info in catalog where fixture.selection.map({ !$0.menuBar.contains(info.id) }) ?? false {
             settings.setInMenuBar(false, for: info.id)
         }
+        // The options of the providers the fixture shows are drawn on.
+        for info in catalog where shownIDs.contains(info.id) {
+            for option in info.options {
+                settings.setOption(true, option.id, for: info.id)
+            }
+        }
         let menu = ProvidersMenu.make(
             settings.menuItems(catalog, detected: detected), actions: .init(setEnabled: { _, _ in }, setInMenuBar: { _, _ in })
         )

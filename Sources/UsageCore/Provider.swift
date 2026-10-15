@@ -113,16 +113,19 @@ public struct ValueRow: Equatable, Sendable {
     public var id: String
     /// "Balance", "This month".
     public var label: String
-    /// Nil shows "—".
+    /// Nil shows `text`, or "—" without one.
     public var value: Amount?
+    /// What shows without an amount, for a value that isn't one: "Unlimited".
+    public var text: String?
     /// A muted line under it: "¥100 topped up · ¥10 granted". Shown only
-    /// with a value.
+    /// with a value or text.
     public var detail: String?
 
-    public init(id: String, label: String, value: Amount?, detail: String? = nil) {
+    public init(id: String, label: String, value: Amount?, text: String? = nil, detail: String? = nil) {
         self.id = id
         self.label = label
         self.value = value
+        self.text = text
         self.detail = detail
     }
 }
