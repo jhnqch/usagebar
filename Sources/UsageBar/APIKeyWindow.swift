@@ -31,7 +31,11 @@ struct APIKeyView: View {
 
     enum Status: Equatable {
         case idle
+        /// After Save or Remove.
         case message(String, isProblem: Bool)
+        /// A connection test's result: about the key as it was when tested,
+        /// so editing the key clears it.
+        case tested(ConnectionTest)
     }
 
     init(name: String, hint: String?, actions: APIKeyActions, typed: String = "", status: Status = .idle) {
@@ -78,11 +82,20 @@ struct APIKeyView: View {
 
     @ViewBuilder
     private var statusText: some View {
-        if case let .message(text, isProblem) = status {
-            Label(text, systemImage: isProblem ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(isProblem ? Color.orange : Color.green)
+        switch status {
+        case .idle:
+            EmptyView()
+        case let .message(text, isProblem):
+            label(text, isProblem: isProblem)
+        case let .tested(result):
+            label(result.text, isProblem: result != .connected)
         }
+    }
+
+    private func label(_ text: String, isProblem: Bool) -> some View {
+        Label(text, systemImage: isProblem ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+            .font(.system(size: 12))
+            .foregroundStyle(isProblem ? Color.orange : Color.green)
     }
 
     private func save() {
@@ -123,13 +136,16 @@ struct APIKeyView: View {
             let result = await actions.test(candidate.isEmpty ? nil : candidate)
             guard run == testRun else { return }
             testing = false
-            status = .message(result.text, isProblem: result != .connected)
+            status = .tested(result)
         }
     }
 
+    /// The key in question changed: a pending test won't report, and a
+    /// finished one's result no longer applies.
     private func invalidateTest() {
         testRun += 1
         testing = false
+        if case .tested = status { status = .idle }
     }
 }
 

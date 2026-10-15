@@ -90,8 +90,8 @@ enum SnapshotMode {
             return rep
         }
         guard
-            let light = image(hasKey: false, typed: "fake-key-for-snapshot", status: .message("Connected", isProblem: false), appearance: .aqua),
-            let dark = image(hasKey: true, typed: "", status: .message("Key rejected", isProblem: true), appearance: .darkAqua),
+            let light = image(hasKey: false, typed: "fake-key-for-snapshot", status: .tested(.connected), appearance: .aqua),
+            let dark = image(hasKey: true, typed: "", status: .tested(.rejected), appearance: .darkAqua),
             let lightImage = light.cgImage, let darkImage = dark.cgImage
         else { throw Failure(description: "could not render the key window") }
         let gap = 40, pad = 30
