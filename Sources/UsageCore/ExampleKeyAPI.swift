@@ -42,8 +42,10 @@ public enum ExampleKeyAPI: KeyAPI {
         let creditCurrency = credit["currency"] as? String ?? "USD"
         let spend = data["spend"] as? [String: Any] ?? [:]
         let spendCurrency = spend["currency"] as? String ?? "USD"
-        let balances = (data["balances"] as? [[String: Any]] ?? []).compactMap { entry -> Amount? in
-            guard let currency = entry["currency"] as? String, let amount = number(entry["amount"]) else { return nil }
+        // Each entry on its own: a malformed one drops only itself.
+        let balances = (data["balances"] as? [Any] ?? []).compactMap { element -> Amount? in
+            guard let entry = element as? [String: Any],
+                  let currency = entry["currency"] as? String, let amount = number(entry["amount"]) else { return nil }
             return Amount(amount, .currency(currency))
         }
         let reading = Reading(

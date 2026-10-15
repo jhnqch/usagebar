@@ -52,7 +52,7 @@ struct KeyFixtureTests {
         { "now": "2026-10-10T14:40:00-07:00", "timeZone": "America/Los_Angeles", "readings": { "example": [
           { "receivedAt": "2026-10-10T14:40:00-07:00", "status": 200,
             "body": { "data": { "credit": { "remaining": "lots", "limit": 20 }, "spend": { "today": null, "this_month": 3.1 },
-                                "balances": [{ "currency": "CNY" }, { "currency": "USD", "amount": "1.5" }] } } }
+                                "balances": [{ "currency": "CNY" }, null, 7, { "currency": "USD", "amount": "1.5" }] } } }
         ] } }
         """
         let fixture = try Fixture.decode(Data(json.utf8))
