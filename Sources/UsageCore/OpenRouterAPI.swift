@@ -72,7 +72,10 @@ public enum OpenRouterAPI: KeyAPI {
         /// "daily", "weekly", "monthly", or nil (never resets, or unknown).
         public var interval: String?
         public var limit: Double?
+        /// `spend_usd`, or `limit_usd - remaining_usd` without it.
         public var spent: Double?
+        /// `resets_at`, or without it the next midnight UTC `interval`
+        /// names; nil when it never resets.
         public var resetsAt: Date?
     }
 
@@ -100,13 +103,27 @@ public enum OpenRouterAPI: KeyAPI {
             spentToday: number(data["usage_daily"]),
             spentThisWeek: number(data["usage_weekly"]),
             spentThisMonth: number(data["usage_monthly"]),
-            budgets: [],
+            budgets: (data["budgets"] as? [Any] ?? []).compactMap { budget($0, receivedAt: receivedAt) },
             freeRequestsLeft: number(freeRequests["remaining"]),
             freeRequestsLimit: number(freeRequests["limit"])
         )
         let empty = Reading(receivedAt: receivedAt, isFreeTier: nil, keyLimit: .unknown, spentToday: nil, spentThisWeek: nil,
                             spentThisMonth: nil, budgets: [], freeRequestsLeft: nil, freeRequestsLimit: nil)
         return reading == empty ? nil : reading
+    }
+
+    /// One `budgets[]` entry; nil when it isn't an object or is the
+    /// `key_limit` budget, which the key limit row already shows.
+    private static func budget(_ element: Any, receivedAt: Date) -> Budget? {
+        guard let entry = element as? [String: Any] else { return nil }
+        let scope = entry["scope"] as? String
+        guard scope != "key_limit" else { return nil }
+        let interval = (entry["reset_interval"] as? String)?.lowercased()
+        let limit = number(entry["limit_usd"])
+        let spent = number(entry["spend_usd"]) ?? number(entry["remaining_usd"]).flatMap { remaining in limit.map { $0 - remaining } }
+        let resetsAt = (entry["resets_at"] as? String).flatMap(date) ?? interval.flatMap { nextReset(after: receivedAt, interval: $0) }
+        let budgetID = [entry["budget_id"], entry["guardrail_id"]].lazy.compactMap { $0 as? String }.first { !$0.isEmpty }
+        return Budget(scope: scope, budgetID: budgetID, interval: interval, limit: limit, spent: spent, resetsAt: resetsAt)
     }
 
     public static func report(_ reading: Reading?, clock: Clock) -> ProviderReport {
@@ -119,6 +136,10 @@ public enum OpenRouterAPI: KeyAPI {
         case let .limited(left, limit, resetsAt):
             rows.append(.credit(CreditRow(id: "openrouter.limit", label: "Key limit", left: left.map(dollars), of: dollars(limit),
                                           resetsAt: resetsAt)))
+        }
+        var ids: Set<String> = []
+        for budget in reading?.budgets ?? [] {
+            rows.append(row(budget, ids: &ids))
         }
         if let reading, reading.isFreeTier == true {
             let requests = Amount.Unit.count("")
@@ -148,6 +169,69 @@ public enum OpenRouterAPI: KeyAPI {
             return moved
         }
         return copy
+    }
+
+    /// A budget that resets as a limit window, so it gets pace and alerts;
+    /// one that never resets as a credit meter.
+    private static func row(_ budget: Budget, ids: inout Set<String>) -> ProviderReport.Row {
+        let noun = switch budget.scope {
+        case "api_key", "workspace_default_key": "key budget"
+        case "member", "workspace_default_member": "member budget"
+        case "workspace": "workspace budget"
+        default: "budget"
+        }
+        let period = switch budget.interval {
+        case "daily": "daily "
+        case "weekly": "weekly "
+        case "monthly": "monthly "
+        default: ""
+        }
+        let name = period + noun
+        let label = name.prefix(1).uppercased() + name.dropFirst()
+
+        // Known by its id when OpenRouter gives one, so alert memory follows
+        // it if budgets are reordered; a repeat gets a suffix.
+        let base = "openrouter.budget.\(budget.budgetID ?? "\(budget.scope ?? "unknown").\(budget.interval ?? "none")")"
+        var id = base
+        var suffix = 2
+        while !ids.insert(id).inserted {
+            id = "\(base).\(suffix)"
+            suffix += 1
+        }
+
+        guard let resetsAt = budget.resetsAt else {
+            return .credit(CreditRow(id: id, label: label, left: budget.limit.flatMap { limit in budget.spent.map { dollars(limit - $0) } },
+                                     of: budget.limit.map(dollars)))
+        }
+        let reading: LimitReading? = budget.limit.flatMap { limit in
+            budget.spent.map { spent in
+                LimitReading(usedPercent: limit > 0 ? spent / limit * 100 : 100, resetsAt: resetsAt)
+            }
+        }
+        let usage = budget.limit.flatMap { limit in budget.spent.map { "\(dollars($0).text) of \(dollars(limit).text) spent" } }
+        return .window(LimitWindow(
+            id: id, label: label, minutes: windowMinutes(budget.interval, endingAt: resetsAt), reading: reading,
+            alertName: "OpenRouter \(name)", usageText: usage
+        ))
+    }
+
+    /// How long a budget's window is, for pace: the day, week or calendar
+    /// month (UTC) before its reset. A budget whose interval is unreadable
+    /// but that does reset is taken as monthly, OpenRouter's usual period.
+    private static func windowMinutes(_ interval: String?, endingAt resetsAt: Date) -> Int {
+        let component: Calendar.Component = switch interval {
+        case "daily": .day
+        case "weekly": .weekOfYear
+        default: .month
+        }
+        guard let start = utc.date(byAdding: component, value: -1, to: resetsAt) else { return 30 * 1440 }
+        return max(Int(resetsAt.timeIntervalSince(start) / 60), 1)
+    }
+
+    /// An ISO 8601 time, with or without fractional seconds.
+    private static func date(_ text: String) -> Date? {
+        (try? Date(text, strategy: .iso8601))
+            ?? (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
     }
 
     private static func dollars(_ value: Double) -> Amount {

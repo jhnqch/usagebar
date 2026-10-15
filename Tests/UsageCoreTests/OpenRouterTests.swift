@@ -75,4 +75,63 @@ struct OpenRouterTests {
             "This month $0",
         ])
     }
+
+    /// The daily key budget is a day long, the workspace's monthly one runs
+    /// 1–31 Oct (UTC): 21h 40m and 9d 21h 40m in, the ticks sit at 90% and
+    /// 32%. The member budget never resets, so it's a credit meter. The
+    /// key_limit budget repeats the key limit and isn't shown twice.
+    @Test("each budget that resets is a meter with its reset, pace and spend")
+    func budgets() throws {
+        let section = try #require(try snapshot("openrouter-budgets")["openrouter"])
+        #expect(texts(section) == [
+            "Key limit $12.40 left of $20 · Resets Sat 5:00 PM",
+            "Daily key budget 92% · Resets in 2h 20m (5:00 PM) · $9.20 of $10 spent",
+            "Monthly workspace budget 30% · Resets Sat 5:00 PM · $61.50 of $200 spent",
+            "Member budget $38 left of $50",
+            "Today $0.85",
+            "This week $4.20",
+            "This month $7.60",
+        ])
+        let elapsed = section.rows.compactMap { row -> String? in
+            if case let .meter(meter) = row { meter.elapsedText } else { nil }
+        }
+        #expect(elapsed == ["90% of window elapsed", "32% of window elapsed"])
+    }
 }
+
+@Suite("OpenRouter budget alerts")
+struct OpenRouterAlertTests {
+    func run(_ spent: Double, at time: Date, memory: AlertMemory) throws -> UsageSnapshot {
+        let json = """
+        { "now": "2026-10-10T14:40:00-07:00", "timeZone": "America/Los_Angeles", "readings": { "openrouter": [
+          { "receivedAt": "2026-10-10T14:38:00-07:00", "status": 200, "body": { "data": { "limit": null, "budgets": [
+            { "scope": "api_key", "guardrail_id": "gr_synthetic_daily", "limit_usd": 10, "spend_usd": \(spent),
+              "remaining_usd": \(10 - spent), "reset_interval": "daily", "resets_at": "2026-10-11T00:00:00Z" } ] } } }
+        ] } }
+        """
+        let fixture = try Fixture.decode(Data(json.utf8))
+        return UsageEngine.snapshot(from: fixture.readings, now: time, timeZone: fixture.timeZone, alertMemory: memory)
+    }
+
+    @Test("a budget crossing 90% fires the usual alert, once")
+    func near() throws {
+        let fixture = try loadFixture("openrouter-budgets")
+        let first = UsageEngine.snapshot(from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone)
+        #expect(first.alerts.map(\.title) == ["OpenRouter daily key budget at 92%"])
+        #expect(first.alerts.first?.body.hasPrefix("Resets 5:00 PM · ") == true)
+        let again = UsageEngine.snapshot(from: fixture.readings, now: fixture.now + 60, timeZone: fixture.timeZone,
+                                         alertMemory: first.alertMemory)
+        #expect(again.alerts.isEmpty)
+    }
+
+    /// Reached at 2:40 PM; midnight UTC is 5 PM in Los Angeles, and the
+    /// next look at 5:05 PM still has the old answer.
+    @Test("a maxed budget says so, and its reset fires the reset alert")
+    func reachedAndReset() throws {
+        let reached = try run(10, at: now, memory: AlertMemory())
+        #expect(reached.alerts.map(\.title) == ["OpenRouter daily key budget reached"])
+        let reset = try run(10, at: date("2026-10-10T17:05:00-07:00"), memory: reached.alertMemory)
+        #expect(reset.alerts.map(\.title) == ["OpenRouter daily key budget reset"])
+    }
+}
+
