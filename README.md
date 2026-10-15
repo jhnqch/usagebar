@@ -22,9 +22,9 @@ UsageBar is unofficial. It isn't affiliated with or endorsed by Anthropic, OpenA
 
 ## Install
 
+Clone this repository, then from its folder:
+
 ```sh
-git clone <this repo> usagebar
-cd usagebar
 scripts/build.sh
 open ~/Applications/UsageBar.app
 ```

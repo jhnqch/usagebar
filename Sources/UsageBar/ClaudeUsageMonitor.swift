@@ -76,10 +76,10 @@ final class ClaudeUsageMonitor {
         if token == nil {
             let login = await Self.readLogin()
             token = login?.token
-            // The plan badge comes from the same saved login; the tokens
-            // stay here.
-            if let login, running {
-                model.update(ClaudeProvider.self) { $0.plan = login.plan }
+            // The plan badge comes from the same saved login (the tokens
+            // stay here); with no readable login there's no badge.
+            if running {
+                model.update(ClaudeProvider.self) { $0.plan = login?.plan }
             }
         }
         // Turned off while the Keychain answered.
