@@ -37,9 +37,13 @@ enum SnapshotMode {
         )
         print("Providers menu:\n" + ProvidersMenu.describe(menu))
 
-        if let keyed = catalog.first(where: \.usesKey) {
+        // The key window of the first key provider the fixture shows, else
+        // the first one listed.
+        let keyed = catalog.first { $0.usesKey && shownIDs.contains($0.id) } ?? catalog.first(where: \.usesKey)
+        if let keyed {
             let keyPath = (outputPath as NSString).deletingPathExtension + "-key.png"
-            try renderKeyWindow(name: keyed.name, hint: BuiltInProviders.fixtureOnly.first { $0.id == keyed.id }?.keyHint, to: keyPath)
+            let api = (BuiltInProviders.keyAPIs + BuiltInProviders.fixtureOnly).first { $0.id == keyed.id }
+            try renderKeyWindow(name: keyed.name, hint: api?.keyHint, to: keyPath)
             print("Key window: \(keyPath)")
         }
 

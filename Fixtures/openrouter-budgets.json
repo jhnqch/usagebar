@@ -98,6 +98,8 @@
     "enabled": [
       "openrouter"
     ],
-    "menuBar": []
+    "menuBar": [
+      "openrouter"
+    ]
   }
 }
