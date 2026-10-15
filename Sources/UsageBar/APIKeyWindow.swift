@@ -52,7 +52,7 @@ struct APIKeyView: View {
             Text("\(name) API key").font(.headline)
             Text(hasKey
                 ? "A key is saved in your Keychain. Paste a new one to replace it."
-                : "Paste a key to show \(name)'s balance. It's kept in your Keychain and sent only to \(name)'s API.")
+                : "Paste a key to show your \(name) usage. It's kept in your Keychain and sent only to \(name)'s API.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
