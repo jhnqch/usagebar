@@ -29,7 +29,8 @@ import Foundation
 ///   window; within a week: weekly; beyond: monthly).
 /// - `nextResetTime` is epoch milliseconds, so it needs no time zone. It's
 ///   optional; without it, or when it lies further off than the window is
-///   long (no time zone correction is guessed), the meter shows the percent
+///   long or more than a day before the answer (no time zone or unit
+///   correction is guessed), the meter shows the percent
 ///   without a reset, pace or alerts.
 /// - `level` (or `planName`, `plan`, `plan_type`, `packageName`) is the
 ///   plan badge.
@@ -174,9 +175,11 @@ extension ZaiPlatformAPI {
         let reset = Amount.number(entry["nextResetTime"]).flatMap { $0 > 0 && $0 < 1e13 ? Date(timeIntervalSince1970: $0 / 1000) : nil }
         let length = length(unit: entry["unit"], number: entry["number"], type: type, resetsAt: reset, receivedAt: receivedAt)
         // A reset further off than the window is long is wrong (a time zone
-        // mix-up, a cached value): show the percent without it.
+        // mix-up, a cached value), and so is one more than a day before the
+        // answer (seconds sent as milliseconds): show the percent without it.
         let plausible = reset.map { reset in
-            length.map { reset.timeIntervalSince(receivedAt) <= TimeInterval($0.minutes * 60 + 60) } ?? true
+            reset.timeIntervalSince(receivedAt) >= -86400
+                && (length.map { reset.timeIntervalSince(receivedAt) <= TimeInterval($0.minutes * 60 + 60) } ?? true)
         } ?? true
         return ZaiQuota.Limit(type: type, length: length, usedPercent: percent, resetsAt: plausible ? reset : nil,
                               resetHidden: !plausible, used: used, total: total)

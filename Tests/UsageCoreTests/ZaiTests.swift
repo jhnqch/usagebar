@@ -289,4 +289,11 @@ struct ZaiTests {
         #expect(second["zai"]?.rows.map(\.id) == first["zai"]?.rows.map(\.id))
         #expect(second.alerts == [])
     }
+
+    @Test("a reset long before the answer (seconds read as milliseconds) is hidden, keeping the percent rather than reading 0%")
+    func resetInThePast() throws {
+        let section = try section(limits: #"[{ "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 64, "nextResetTime": 1791676680 }]"#)
+        #expect(texts(section) == ["5-hour 64%"])
+        #expect(section.note == "A reset time from api.z.ai looked wrong, so it's hidden")
+    }
 }
