@@ -1,0 +1,84 @@
+{
+  "_comment": "Synthetic, not recorded from a real token. The body is what CopilotAPI.fetch builds from its requests to api.github.com: GET /user (login), GET /users/{login}/settings/billing/premium_request/usage?year=&month= (documented: docs.github.com/en/rest/billing/usage) and, with the premium requests meter on, the undocumented GET /copilot_internal/user (shape from CodexBar's CopilotUsageModels tests). A Copilot Business seat from an organization: the user-level billing report has nothing, since the organization is billed.",
+  "now": "2026-10-14T10:00:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "copilot": [
+      {
+        "receivedAt": "2026-10-14T09:58:00-07:00",
+        "status": 200,
+        "body": {
+          "user": {
+            "login": "mona-corp",
+            "id": 1000001,
+            "type": "User"
+          },
+          "period": {
+            "year": 2026,
+            "month": 10
+          },
+          "billing": {
+            "status": 200,
+            "body": {
+              "timePeriod": {
+                "year": 2026,
+                "month": 10
+              },
+              "user": "mona-corp",
+              "usageItems": []
+            }
+          },
+          "copilotInternal": {
+            "status": 200,
+            "body": {
+              "login": "mona-corp",
+              "access_type_sku": "copilot_for_business_seat",
+              "copilot_plan": "business",
+              "chat_enabled": true,
+              "assigned_date": "2025-03-02T18:21:44-08:00",
+              "quota_reset_date": "2026-11-01",
+              "quota_reset_date_utc": "2026-11-01T00:00:00.000Z",
+              "quota_snapshots": {
+                "chat": {
+                  "entitlement": 0,
+                  "remaining": 0,
+                  "percent_remaining": 100,
+                  "unlimited": true,
+                  "quota_id": "chat",
+                  "overage_count": 0,
+                  "overage_permitted": false
+                },
+                "completions": {
+                  "entitlement": 0,
+                  "remaining": 0,
+                  "percent_remaining": 100,
+                  "unlimited": true,
+                  "quota_id": "completions",
+                  "overage_count": 0,
+                  "overage_permitted": false
+                },
+                "premium_interactions": {
+                  "entitlement": 300,
+                  "remaining": 255,
+                  "percent_remaining": 85,
+                  "unlimited": false,
+                  "quota_id": "premium_interactions",
+                  "overage_count": 0,
+                  "overage_permitted": false
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "providers": {
+    "enabled": [
+      "copilot"
+    ],
+    "menuBar": [
+      "copilot"
+    ]
+  }
+}

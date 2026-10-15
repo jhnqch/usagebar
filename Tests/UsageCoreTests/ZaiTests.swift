@@ -217,7 +217,7 @@ struct ZaiTests {
         #expect(ZaiAPI.hosts == ["api.z.ai"])
         #expect(BigModelAPI.hosts == ["open.bigmodel.cn"])
         let keyed = BuiltInProviders.catalog.filter(\.usesKey).map(\.name)
-        #expect(keyed == ["OpenRouter", "DeepSeek", "Moonshot", "Moonshot China", "z.ai", "BigModel"])
+        #expect(keyed == ["OpenRouter", "DeepSeek", "Moonshot", "Moonshot China", "z.ai", "BigModel", "GitHub Copilot"])
     }
 
     @Test("the key goes in the Authorization header as it is, without Bearer, to api.z.ai only")

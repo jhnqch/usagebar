@@ -1,0 +1,124 @@
+{
+  "_comment": "Synthetic, not recorded from a real token. The body is what CopilotAPI.fetch builds from its requests to api.github.com: GET /user (login), GET /users/{login}/settings/billing/premium_request/usage?year=&month= (documented: docs.github.com/en/rest/billing/usage) and, with the premium requests meter on, the undocumented GET /copilot_internal/user (shape from CodexBar's CopilotUsageModels tests). A plan with unlimited premium requests, past its 1,500-request mark, billed nothing beyond it.",
+  "now": "2026-10-14T10:00:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "copilot": [
+      {
+        "receivedAt": "2026-10-14T09:58:00-07:00",
+        "status": 200,
+        "body": {
+          "user": {
+            "login": "mona-example",
+            "id": 1000001,
+            "type": "User"
+          },
+          "period": {
+            "year": 2026,
+            "month": 10
+          },
+          "billing": {
+            "status": 200,
+            "body": {
+              "timePeriod": {
+                "year": 2026,
+                "month": 10
+              },
+              "user": "mona-example",
+              "usageItems": [
+                {
+                  "product": "copilot",
+                  "sku": "copilot_premium_request",
+                  "model": "Claude Sonnet 4.5",
+                  "unitType": "requests",
+                  "pricePerUnit": 0.04,
+                  "grossQuantity": 1210,
+                  "grossAmount": 48.4,
+                  "discountQuantity": 1210,
+                  "discountAmount": 48.4,
+                  "netQuantity": 0,
+                  "netAmount": 0.0
+                },
+                {
+                  "product": "copilot",
+                  "sku": "copilot_premium_request",
+                  "model": "GPT-5",
+                  "unitType": "requests",
+                  "pricePerUnit": 0.04,
+                  "grossQuantity": 402,
+                  "grossAmount": 16.08,
+                  "discountQuantity": 402,
+                  "discountAmount": 16.08,
+                  "netQuantity": 0,
+                  "netAmount": 0.0
+                },
+                {
+                  "product": "copilot",
+                  "sku": "copilot_premium_request",
+                  "model": "Claude Opus 4.1",
+                  "unitType": "requests",
+                  "pricePerUnit": 0.04,
+                  "grossQuantity": 230,
+                  "grossAmount": 9.2,
+                  "discountQuantity": 230,
+                  "discountAmount": 9.2,
+                  "netQuantity": 0,
+                  "netAmount": 0.0
+                }
+              ]
+            }
+          },
+          "copilotInternal": {
+            "status": 200,
+            "body": {
+              "login": "mona-example",
+              "access_type_sku": "copilot_enterprise_seat_quota",
+              "copilot_plan": "enterprise",
+              "chat_enabled": true,
+              "assigned_date": "2025-03-02T18:21:44-08:00",
+              "quota_reset_date": "2026-11-01",
+              "quota_reset_date_utc": "2026-11-01T00:00:00.000Z",
+              "quota_snapshots": {
+                "chat": {
+                  "entitlement": 0,
+                  "remaining": 0,
+                  "percent_remaining": 100,
+                  "unlimited": true,
+                  "quota_id": "chat",
+                  "overage_count": 0,
+                  "overage_permitted": false
+                },
+                "completions": {
+                  "entitlement": 0,
+                  "remaining": 0,
+                  "percent_remaining": 100,
+                  "unlimited": true,
+                  "quota_id": "completions",
+                  "overage_count": 0,
+                  "overage_permitted": false
+                },
+                "premium_interactions": {
+                  "entitlement": 0,
+                  "remaining": 0,
+                  "percent_remaining": 100,
+                  "unlimited": true,
+                  "quota_id": "premium_interactions",
+                  "overage_count": 0,
+                  "overage_permitted": false
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "providers": {
+    "enabled": [
+      "copilot"
+    ],
+    "menuBar": [
+      "copilot"
+    ]
+  }
+}

@@ -4,7 +4,7 @@ public enum BuiltInProviders {
 
     /// The key providers UsageBar ships, in display order after `all`'s
     /// others. A new one goes here and nowhere else.
-    public static let keyAPIs: [any KeyAPI.Type] = [OpenRouterAPI.self, DeepSeekAPI.self, MoonshotAPI.self, MoonshotChinaAPI.self, ZaiAPI.self, BigModelAPI.self]
+    public static let keyAPIs: [any KeyAPI.Type] = [OpenRouterAPI.self, DeepSeekAPI.self, MoonshotAPI.self, MoonshotChinaAPI.self, ZaiAPI.self, BigModelAPI.self, CopilotAPI.self]
 
     /// What the Providers menu lists and detection checks, in display order.
     public static let catalog: [ProviderInfo] = [ClaudeProvider.info, CodexProvider.info] + keyAPIs.map { $0.info }
