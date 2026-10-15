@@ -3,13 +3,18 @@ import Foundation
 /// Everything the UI shows, computed by `UsageEngine`.
 public struct UsageSnapshot: Equatable, Sendable {
     public var menuBar: MenuBarLabel
-    public var claude: ServiceSection
-    public var codex: ServiceSection
+    /// One per provider, in display order.
+    public var sections: [ProviderSection]
     /// Notifications to post now; usually none.
     public var alerts: [LimitAlert] = []
     /// What has been alerted, including `alerts`: the next evaluation's
     /// input, saved between launches.
     public var alertMemory = AlertMemory()
+
+    /// The section of the provider with `id`, if it's shown.
+    public subscript(id: String) -> ProviderSection? {
+        sections.first { $0.id == id }
+    }
 }
 
 /// How close a limit is: normal below 90%, warning from 90%, maxed at 100%.
@@ -25,31 +30,99 @@ public enum Level: Equatable, Sendable {
     }
 }
 
-/// The menu bar text: `✳ <claude> · ⌘ <codex>`.
+/// The menu bar text: each provider's symbol and part, in display order,
+/// e.g. `✳ 61% · ⌘ 13%`.
 public struct MenuBarLabel: Equatable, Sendable {
-    public var claude: LabelPart
-    public var codex: LabelPart
+    public var parts: [Part]
 
-    public var text: String { "✳ \(claude.text) · ⌘ \(codex.text)" }
+    public init(parts: [Part]) {
+        self.parts = parts
+    }
+
+    /// One provider's symbol and part.
+    public struct Part: Equatable, Sendable, Identifiable {
+        /// The provider's id.
+        public var id: String
+        /// The provider's name, for VoiceOver.
+        public var name: String
+        public var symbol: String
+        public var value: LabelPart
+
+        public init(id: String, name: String, symbol: String, value: LabelPart) {
+            self.id = id
+            self.name = name
+            self.symbol = symbol
+            self.value = value
+        }
+    }
+
+    public var text: String {
+        parts.map { "\($0.symbol) \($0.value.text)" }.joined(separator: " · ")
+    }
+
+    /// What VoiceOver reads: "Usage. Claude 61%. Codex 13%."
+    public var accessibilityText: String {
+        (["Usage."] + parts.map { "\($0.name) \($0.value.text)." }).joined(separator: " ")
+    }
+
+    /// The part of the provider with `id`, if it has one.
+    public subscript(id: String) -> LabelPart? {
+        parts.first { $0.id == id }?.value
+    }
 }
 
-/// One service's part of the menu bar text.
+/// One provider's part of the menu bar text.
 public struct LabelPart: Equatable, Sendable {
     public var text: String
     public var level: Level
+
+    public init(text: String, level: Level) {
+        self.text = text
+        self.level = level
+    }
 }
 
-/// One service's block in the popover.
-public struct ServiceSection: Equatable, Sendable {
+/// One provider's block in the popover.
+public struct ProviderSection: Equatable, Sendable, Identifiable {
+    /// The provider's id.
+    public var id: String
+    /// The title: "Claude".
+    public var name: String
+    /// The provider's menu bar glyph: "✳".
+    public var symbol: String
+    /// The SF Symbol beside the title.
+    public var systemImage: String
     /// Plan badge, e.g. "Max" or "Pro"; nil when unknown.
     public var plan: String?
     /// "Updated 3 min ago"; nil when there's no reading.
     public var updatedText: String?
-    public var meters: [Meter]
-    /// A line under the meters, e.g. "No 5-hour limit on your plan".
+    /// Top to bottom.
+    public var rows: [Row]
+    /// A line under the rows, e.g. "No 5-hour limit on your plan".
     public var note: String?
     /// The weekly cost chart; nil where usage isn't tracked.
     public var chart: CostChart? = nil
+
+    /// One row of a section.
+    public enum Row: Equatable, Sendable, Identifiable {
+        /// A limit window's meter.
+        case meter(Meter)
+
+        public var id: String {
+            switch self {
+            case let .meter(meter): meter.id
+            }
+        }
+    }
+
+    /// The limit windows' meters, top to bottom.
+    public var meters: [Meter] {
+        rows.compactMap { row in
+            switch row {
+            case let .meter(meter): meter
+            }
+        }
+    }
 }
 
 /// One limit window's meter.

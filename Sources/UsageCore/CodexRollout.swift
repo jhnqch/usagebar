@@ -290,3 +290,6 @@ public enum CodexRollout {
         }
     }
 }
+
+/// The incremental scan of Codex's rollout files.
+public typealias RolloutScan = UsageLogScan<CodexRollout.Parser>

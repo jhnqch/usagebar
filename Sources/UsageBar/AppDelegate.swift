@@ -10,8 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let codex: CodexMonitor
     private let claudeStatusLine: ClaudeStatusLineMonitor
     private let claudeUsage: ClaudeUsageMonitor
-    private let claudeUsageLog: UsageLogMonitor<ClaudeTranscript.Parser>
-    private let codexUsageLog: UsageLogMonitor<CodexRollout.Parser>
+    private let claudeUsageLog: UsageLogMonitor<ClaudeTranscript.Parser, ClaudeProvider>
+    private let codexUsageLog: UsageLogMonitor<CodexRollout.Parser, CodexProvider>
     private let notifier = LimitNotifier()
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
@@ -24,10 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         claudeStatusLine = ClaudeStatusLineMonitor(model: model)
         claudeUsage = ClaudeUsageMonitor(model: model)
         claudeUsageLog = UsageLogMonitor(
-            model: model, reader: UsageLogReader(directories: UsageLogs.claudeProjects), name: "Claude Code", usage: \.claudeUsage
+            model: model, reader: UsageLogReader(directories: UsageLogs.claudeProjects), name: "Claude Code", usage: \ClaudeProvider.usage
         )
         codexUsageLog = UsageLogMonitor(
-            model: model, reader: UsageLogReader(directories: UsageLogs.codexSessions), name: "Codex", usage: \.codexUsage
+            model: model, reader: UsageLogReader(directories: UsageLogs.codexSessions), name: "Codex", usage: \CodexProvider.usage
         )
     }
 

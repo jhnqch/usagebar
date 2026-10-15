@@ -25,10 +25,11 @@ final class AppModel {
         snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory)
     }
 
-    /// Changes the readings and, if they changed, recomputes the snapshot.
-    func update(_ change: (inout Readings) -> Void) {
+    /// Changes the readings of the provider of type `P` and, if they
+    /// changed, recomputes the snapshot.
+    func update<P: Provider>(_ type: P.Type, _ change: (inout P) -> Void) {
         var updated = readings
-        change(&updated)
+        updated.update(type, change)
         guard updated != readings else { return }
         readings = updated
         refresh()
@@ -59,15 +60,14 @@ final class AppModel {
     }
 }
 
-/// What the app bundles: Claude's plan for the badge, from the recorded
-/// sample. Neither Claude source reports the plan; every limit is live.
+/// The providers the app starts with, in display order, and what it
+/// bundles: Claude's plan for the badge, from the recorded sample. Neither
+/// Claude source reports the plan; every limit is live.
 enum SampleReadings {
     static func load() -> Readings {
-        guard
-            let url = Bundle.main.url(forResource: "sample", withExtension: "json"),
-            let data = try? Data(contentsOf: url),
-            let fixture = try? Fixture.decode(data)
-        else { return Readings() }
-        return Readings(claudePlan: fixture.readings.claudePlan)
+        let sample = Bundle.main.url(forResource: "sample", withExtension: "json")
+            .flatMap { try? Data(contentsOf: $0) }
+            .flatMap { try? Fixture.decode($0) }
+        return Readings([ClaudeProvider(plan: sample?.readings[ClaudeProvider.self]?.plan), CodexProvider()])
     }
 }

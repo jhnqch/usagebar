@@ -227,12 +227,6 @@ public struct UsageLogScan<Parser: UsageLogParser>: Equatable, Sendable {
     public var entries: [UsageEntry] { ledger.entries }
 }
 
-/// The incremental scan of Claude Code's transcripts.
-public typealias TranscriptScan = UsageLogScan<ClaudeTranscript.Parser>
-
-/// The incremental scan of Codex's rollout files.
-public typealias RolloutScan = UsageLogScan<CodexRollout.Parser>
-
 /// JSON-lines logs: one JSON object per line.
 enum JSONLines {
     /// Calls `body` with each line (without its newline) that contains any

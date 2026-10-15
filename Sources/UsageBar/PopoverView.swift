@@ -1,7 +1,7 @@
 import SwiftUI
 import UsageCore
 
-/// Layout A: Claude and Codex stacked, every meter visible, no tabs.
+/// Layout A: every provider's section stacked, every meter visible, no tabs.
 struct PopoverView: View {
     var snapshot: UsageSnapshot
     var height: Height = .full
@@ -57,9 +57,12 @@ struct PopoverView: View {
 
     private var sections: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionView(title: "Claude", symbol: "asterisk", section: snapshot.claude)
-            Rectangle().fill(Palette(scheme).divider).frame(height: 1)
-            SectionView(title: "Codex", symbol: "apple.terminal", section: snapshot.codex)
+            ForEach(Array(snapshot.sections.enumerated()), id: \.element.id) { index, section in
+                if index > 0 {
+                    Rectangle().fill(Palette(scheme).divider).frame(height: 1)
+                }
+                SectionView(section: section)
+            }
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
     }
@@ -94,9 +97,7 @@ private struct ScrollPreview: Layout {
 }
 
 private struct SectionView: View {
-    var title: String
-    var symbol: String
-    var section: ServiceSection
+    var section: ProviderSection
 
     @Environment(\.colorScheme) private var scheme
 
@@ -104,10 +105,10 @@ private struct SectionView: View {
         let palette = Palette(scheme)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: symbol)
+                Image(systemName: section.systemImage)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: 15)
-                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(section.name).font(.system(size: 13, weight: .semibold))
                 if let plan = section.plan {
                     Text(plan)
                         .font(.system(size: 11))
@@ -120,7 +121,11 @@ private struct SectionView: View {
                     Text(updated).font(.system(size: 11)).foregroundStyle(palette.muted)
                 }
             }
-            ForEach(section.meters) { MeterView(meter: $0) }
+            ForEach(section.rows) { row in
+                switch row {
+                case let .meter(meter): MeterView(meter: meter)
+                }
+            }
             if let note = section.note {
                 Text(note).font(.system(size: 11)).foregroundStyle(palette.muted)
             }

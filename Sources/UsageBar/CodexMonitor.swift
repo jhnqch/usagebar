@@ -31,7 +31,7 @@ final class CodexMonitor {
 
     func start() {
         appServer.onReading = { [weak model] limits in
-            model?.update { $0.codex = limits }
+            model?.update(CodexProvider.self) { $0.appServer = limits }
         }
         // The handshake reads once by itself.
         lastRead = Date()
@@ -72,6 +72,6 @@ final class CodexMonitor {
             lastSessionLog = limits
             log.info("Codex limits from session log: \(limits?.windows.map { "\($0.windowMinutes)m" } ?? [], privacy: .public)")
         }
-        model.update { $0.codexSessionLog = limits }
+        model.update(CodexProvider.self) { $0.sessionLog = limits }
     }
 }

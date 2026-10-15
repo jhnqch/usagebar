@@ -76,7 +76,7 @@ final class ClaudeUsageMonitor {
         let reading = polling.reading
         let windows = [reading?.fiveHour.map { _ in "5h" }, reading?.sevenDay.map { _ in "wk" }, reading?.sevenDayFable.map { _ in "Fable" }]
         log.info("Claude usage endpoint: \(finished.summary, privacy: .public); windows: \(windows.compactMap(\.self), privacy: .public)")
-        model.update { $0.claude = reading }
+        model.update(ClaudeProvider.self) { $0.endpoint = reading }
     }
 
     private func fetch(_ token: String) async -> ClaudeUsagePolling.Outcome {

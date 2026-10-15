@@ -1,9 +1,16 @@
 import Foundation
 
-/// Time text relative to a fixed "now" in a given time zone.
-struct Clock {
-    var now: Date
-    var timeZone: TimeZone
+/// Time text relative to a fixed "now" in a given time zone. Providers get
+/// one to report against, so every time they show is relative to the same
+/// "now".
+public struct Clock: Sendable {
+    public var now: Date
+    public var timeZone: TimeZone
+
+    public init(now: Date, timeZone: TimeZone) {
+        self.now = now
+        self.timeZone = timeZone
+    }
 
     private static let day: TimeInterval = 24 * 60 * 60
 

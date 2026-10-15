@@ -124,9 +124,10 @@ private struct SnapshotScene: View {
 
     private var menuBarText: Text {
         let palette = Palette(scheme)
-        let label = snapshot.menuBar
-        let claude = Text(label.claude.text).foregroundStyle(palette.text(label.claude.level))
-        let codex = Text(label.codex.text).foregroundStyle(palette.text(label.codex.level))
-        return Text("✳ \(claude) · ⌘ \(codex)")
+        return snapshot.menuBar.parts.enumerated().reduce(Text("")) { text, element in
+            let (index, part) = element
+            let value = Text(part.value.text).foregroundStyle(palette.text(part.value.level))
+            return Text("\(text)\(index == 0 ? "" : " · ")\(part.symbol) \(value)")
+        }
     }
 }

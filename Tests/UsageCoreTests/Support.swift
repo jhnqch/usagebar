@@ -62,6 +62,36 @@ func snapshot(
     )
 }
 
+extension Readings {
+    /// Claude's and Codex's readings, the two providers in the app's order.
+    init(
+        claudePlan: String? = nil,
+        claude: ClaudeLimits? = nil,
+        claudeStatusLine: ClaudeLimits? = nil,
+        codex: CodexLimits? = nil,
+        codexSessionLog: CodexLimits? = nil,
+        claudeUsage: [UsageEntry] = [],
+        codexUsage: [UsageEntry] = []
+    ) {
+        self.init([
+            ClaudeProvider(plan: claudePlan, endpoint: claude, statusLine: claudeStatusLine, usage: claudeUsage),
+            CodexProvider(appServer: codex, sessionLog: codexSessionLog, usage: codexUsage),
+        ])
+    }
+}
+
+extension UsageSnapshot {
+    /// The Claude section; every snapshot of the built-in providers has one.
+    var claude: ProviderSection { self["claude"]! }
+    /// The Codex section; every snapshot of the built-in providers has one.
+    var codex: ProviderSection { self["codex"]! }
+}
+
+extension MenuBarLabel {
+    var claude: LabelPart { self["claude"]! }
+    var codex: LabelPart { self["codex"]! }
+}
+
 /// A file under the repo's `Fixtures/` directory.
 func fixtureURL(_ path: String) -> URL {
     URL(fileURLWithPath: #filePath)

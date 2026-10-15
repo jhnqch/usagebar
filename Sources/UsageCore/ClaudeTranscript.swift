@@ -144,3 +144,6 @@ public enum ClaudeTranscript {
 func tokenCount<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Int {
     max(0, (try? c.decodeIfPresent(Int.self, forKey: key)) ?? 0)
 }
+
+/// The incremental scan of Claude Code's transcripts.
+public typealias TranscriptScan = UsageLogScan<ClaudeTranscript.Parser>

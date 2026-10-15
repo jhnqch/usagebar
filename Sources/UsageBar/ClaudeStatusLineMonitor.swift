@@ -77,6 +77,6 @@ final class ClaudeStatusLineMonitor {
             let windows = [limits?.fiveHour.map { "5h \($0.usedPercent.formatted())%" }, limits?.sevenDay.map { "wk \($0.usedPercent.formatted())%" }]
             log.info("Claude limits from the status line: \(windows.compactMap(\.self), privacy: .public)")
         }
-        model.update { $0.claudeStatusLine = limits }
+        model.update(ClaudeProvider.self) { $0.statusLine = limits }
     }
 }

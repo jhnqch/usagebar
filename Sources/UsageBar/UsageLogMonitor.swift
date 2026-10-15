@@ -7,11 +7,11 @@ import UsageCore
 /// runs on `UsageLogReader`'s actor, off the main thread; only the result
 /// comes back here to update the model.
 @MainActor
-final class UsageLogMonitor<Parser: UsageLogParser> {
+final class UsageLogMonitor<Parser: UsageLogParser, Owner: Provider> {
     private let model: AppModel
     private let reader: UsageLogReader<Parser>
     private let name: String
-    private let usage: WritableKeyPath<Readings, [UsageEntry]>
+    private let usage: WritableKeyPath<Owner, [UsageEntry]>
     private var loop: Task<Void, Never>?
     private var scanning = false
     private var lastScan = Date.distantPast
@@ -23,9 +23,9 @@ final class UsageLogMonitor<Parser: UsageLogParser> {
     /// most 7 days ago) and of the last 7 local days.
     private static var lookback: TimeInterval { 8 * 24 * 60 * 60 }
 
-    /// Scans `reader`'s logs into the readings at `usage`; `name` labels
-    /// the log lines.
-    init(model: AppModel, reader: UsageLogReader<Parser>, name: String, usage: WritableKeyPath<Readings, [UsageEntry]>) {
+    /// Scans `reader`'s logs into the provider readings at `usage`; `name`
+    /// labels the log lines.
+    init(model: AppModel, reader: UsageLogReader<Parser>, name: String, usage: WritableKeyPath<Owner, [UsageEntry]>) {
         self.model = model
         self.reader = reader
         self.name = name
@@ -62,6 +62,6 @@ final class UsageLogMonitor<Parser: UsageLogParser> {
         let entries = await reader.scan(since: Date() - Self.lookback)
         log.info("\(self.name, privacy: .public) logs: \(entries.count, privacy: .public) entries in \(String(describing: ContinuousClock.now - started), privacy: .public)")
         let usage = usage
-        model.update { $0[keyPath: usage] = entries }
+        model.update(Owner.self) { $0[keyPath: usage] = entries }
     }
 }
