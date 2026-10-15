@@ -100,6 +100,9 @@ struct KeyFixtureTests {
             for marker in [fakeKey, "Bearer ", "\"authorization\"", "\"Authorization\"", "sk-or-", "sk-ant-", "ghp_", "github_pat_"] {
                 #expect(!text.contains(marker), "\(url.lastPathComponent) contains \(marker)")
             }
+            // DeepSeek and Moonshot keys are "sk-" and a long run of letters
+            // and digits.
+            #expect(text.firstMatch(of: /sk-[A-Za-z0-9]{20,}/) == nil, "\(url.lastPathComponent) contains an sk- key")
         }
         #expect(checked > 10)
     }
