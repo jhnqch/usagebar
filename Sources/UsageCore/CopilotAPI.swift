@@ -66,7 +66,7 @@ public enum CopilotAPI: KeyAPI {
     // MARK: Fetch
 
     public static func fetch(_ client: KeyClient) async -> PollOutcome {
-        let user = await client.get(endpoint, headers: restHeaders)
+        let user = rateLimitAsTransient(await client.get(endpoint, headers: restHeaders))
         guard case let .response(200, userBody, _) = user else { return user }
         guard let login = login(in: userBody) else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
 
@@ -80,7 +80,7 @@ public enum CopilotAPI: KeyAPI {
         for (key, report) in [("aiCredits", "ai_credit"), ("billing", "premium_request")] {
             guard let url = URL(string: "https://api.github.com/users/\(login)/settings/billing/\(report)/usage?year=\(year)&month=\(monthNumber)")
             else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
-            let answer = await client.get(url, headers: restHeaders)
+            let answer = rateLimitAsTransient(await client.get(url, headers: restHeaders))
             switch answer {
             case .networkError, .blocked, .noCredentials:
                 return answer
@@ -95,6 +95,16 @@ public enum CopilotAPI: KeyAPI {
         }
         let body = (try? JSONSerialization.data(withJSONObject: combined)) ?? Data("{}".utf8)
         return .response(status: 200, body: body, retryAfter: nil)
+    }
+
+    /// GitHub answers a used-up rate limit with 403 as often as 429: as
+    /// 429, it keeps the last reading and backs off instead of reading as a
+    /// refused token.
+    private static func rateLimitAsTransient(_ outcome: PollOutcome) -> PollOutcome {
+        guard case let .response(403, body, retryAfter) = outcome,
+              let message = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["message"] as? String,
+              message.lowercased().contains("rate limit") else { return outcome }
+        return .response(status: 429, body: body, retryAfter: retryAfter)
     }
 
     /// The login from a `GET /user` answer, when it's one GitHub could have
@@ -129,9 +139,11 @@ public enum CopilotAPI: KeyAPI {
         return copy
     }
 
-    /// A token that can't read either report shows nothing useful.
+    /// A token that can read neither report shows nothing useful.
     public static func connectionProblem(_ reading: Reading) -> String? {
-        reading.aiCredits == .forbidden && reading.premiumRequests == .forbidden ? forbiddenNote : nil
+        guard reading.aiCredits.usage == nil, reading.premiumRequests.usage == nil else { return nil }
+        return reading.aiCredits == .forbidden || reading.premiumRequests == .forbidden
+            ? forbiddenNote : "Couldn't read the usage reports from \(hostText)"
     }
 
     // MARK: Reading
@@ -191,6 +203,8 @@ public enum CopilotAPI: KeyAPI {
         public var creditBilling = false
         /// `credits_used` on AI-credit billing.
         public var creditsUsed: Double?
+        /// The meter's limit is in AI credits, not premium requests.
+        public var creditLimit = false
         public var premium: Premium?
         /// The reset: from the answer when it's plausible, else midnight UTC
         /// on the next 1st.
@@ -275,13 +289,17 @@ public enum CopilotAPI: KeyAPI {
         let entitlement = Amount.number(premium["entitlement"])
         let remaining = Amount.number(premium["remaining"])
         quota.creditsUsed = Amount.number(premium["credits_used"])
-        // On AI-credit billing the premium snapshot is a placeholder: zeros,
-        // sometimes marked unlimited. It's no limit to meter.
-        if body["token_based_billing"] as? Bool == true || (premium["unlimited"] as? Bool != true && entitlement == 0 && remaining == 0) {
+        let tokenBased = body["token_based_billing"] as? Bool == true
+        let unlimited = premium["unlimited"] as? Bool == true
+        // A placeholder snapshot (zeros, and on AI-credit billing sometimes
+        // marked unlimited) is no limit to meter. A real limit on AI-credit
+        // billing is a meter of AI credits.
+        if (!unlimited && entitlement == 0 && remaining == 0) || (tokenBased && (unlimited || !((entitlement ?? 0) > 0))) {
             quota.creditBilling = true
             return quota
         }
-        if premium["unlimited"] as? Bool == true {
+        quota.creditLimit = tokenBased
+        if unlimited {
             quota.premium = .unlimited
             return quota
         }
@@ -384,15 +402,17 @@ public enum CopilotAPI: KeyAPI {
             } else {
                 nil
             }
-            return .window(window(reading: reading, minutes: quota.minutes, usage: usage))
+            return .window(window(reading: reading, minutes: quota.minutes, usage: usage, credits: quota.creditLimit))
         case nil:
             return .window(window(reading: nil, minutes: quota.minutes, usage: nil))
         }
     }
 
-    private static func window(reading: LimitReading?, minutes: Int?, usage: String?) -> LimitWindow {
-        LimitWindow(id: "copilot.premium", label: "Premium requests", minutes: minutes ?? 30 * 1440, reading: reading,
-                    alertName: "Copilot premium requests limit", nearAlertName: "Copilot premium requests", usageText: usage)
+    private static func window(reading: LimitReading?, minutes: Int?, usage: String?, credits: Bool = false) -> LimitWindow {
+        let what = credits ? "AI credits" : "premium requests"
+        return LimitWindow(id: credits ? "copilot.creditLimit" : "copilot.premium", label: credits ? "AI credits" : "Premium requests",
+                           minutes: minutes ?? 30 * 1440, reading: reading,
+                           alertName: "Copilot \(what) limit", nearAlertName: "Copilot \(what)", usageText: usage)
     }
 
     /// "$8.56 at list price, nothing billed beyond the plan", then the

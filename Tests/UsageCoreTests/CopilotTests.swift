@@ -109,6 +109,16 @@ struct CopilotTests {
         #expect(section.note == "Your Copilot seat is billed to an organization, so GitHub reports its usage there")
     }
 
+    @Test("on AI-credit billing a real limit is still a meter, of AI credits; a placeholder or unlimited one isn't")
+    func creditQuota() throws {
+        let tokenBased = #", "token_based_billing": true, "quota_reset_date_utc": "2026-11-01T00:00:00.000Z""#
+        let limited = try section(quota: internalAnswer(#"{ "entitlement": 1500, "remaining": 900, "percent_remaining": 60, "unlimited": false, "credits_used": 600 }"#, extra: tokenBased))
+        #expect(texts(limited) == ["AI credits 40% · Resets Sat Oct 31 5:00 PM", "This month 0 AI credits"])
+        #expect(meters(limited).first?.usageText == "600 of 1,500 used")
+        let unlimited = try section(quota: internalAnswer(#"{ "entitlement": 0, "remaining": 0, "unlimited": true, "credits_used": 31 }"#, extra: tokenBased))
+        #expect(texts(unlimited) == ["AI credits used 31", "This month 0 AI credits"])
+    }
+
     @Test("an unlimited plan shows Unlimited rather than a meter")
     func unlimited() throws {
         let snapshot = try snapshot("copilot-unlimited")
@@ -336,6 +346,36 @@ struct CopilotRequestTests {
         #expect(await refused.testConnection(key: nil) == .failed("This token can't read billing: give it the Plan permission (read)"))
         let readable = poller(FakeTransport(user, report, forbidden))
         #expect(await readable.testConnection(key: nil) == .connected)
+    }
+
+    @Test("a 403 that says the rate limit is used up keeps the last reading and backs off, rather than rejecting the token")
+    func rateLimited403() async {
+        let limited = PollOutcome.response(status: 403, body: Data(#"{ "message": "API rate limit exceeded for user ID 1." }"#.utf8), retryAfter: 1200)
+        let transport = FakeTransport(user, report, report, limited)
+        let clock = FakeClock(date("2026-10-31T18:00:00-07:00"))
+        let poller = KeyPoller<CopilotAPI>(store: MemoryKeyStore(["copilot": fakeKey]), transport: transport, now: { clock.now })
+        await poller.poll(.timer)
+        let good = poller.provider.reading
+        clock.now += 6 * 60
+        await poller.poll(.timer)  // /user rate-limited
+        #expect(poller.provider.reading == good)
+        #expect(poller.provider.problem == nil)
+        // Retry-After's 20 minutes.
+        #expect(!poller.isDue(.timer, at: clock.now + 19 * 60))
+
+        transport.answer(user, PollOutcome.response(status: 403, body: Data(#"{ "message": "You have exceeded a secondary rate limit." }"#.utf8)))
+        clock.now += 61 * 60
+        await poller.poll(.timer)  // a report rate-limited
+        #expect(poller.provider.reading == good)
+    }
+
+    @Test("Test connection needs a report it could read, empty or not")
+    func connectionNeedsAReport() async {
+        let notFound = PollOutcome.response(status: 404, body: Data(#"{ "message": "Not Found" }"#.utf8))
+        let missing = poller(FakeTransport(user, notFound, notFound))
+        #expect(await missing.testConnection(key: nil) == .failed("Couldn't read the usage reports from api.github.com"))
+        let empty = poller(FakeTransport(user, .response(status: 200, body: Data(#"{ "usageItems": [] }"#.utf8)), notFound))
+        #expect(await empty.testConnection(key: nil) == .connected)
     }
 
     @Test("a token GET /user rejects is \"Key rejected\", and nothing else is asked")
