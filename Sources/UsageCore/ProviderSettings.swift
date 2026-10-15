@@ -13,6 +13,8 @@ public struct ProviderInfo: Sendable {
     /// Whether it reads an API key the user pastes in: then it's detected
     /// once a key is saved, and the Providers menu offers a key window.
     public var usesKey: Bool
+    /// Whether its rows are limit windows, which a menu bar part shows.
+    public var hasWindows: Bool
     /// Files or directories any one of which means the provider is set up
     /// on this Mac, given the home directory and the environment.
     public var detectionPaths: @Sendable (_ home: String, _ environment: [String: String]) -> [String]
@@ -22,12 +24,14 @@ public struct ProviderInfo: Sendable {
         name: String,
         inMenuBarByDefault: Bool = false,
         usesKey: Bool = false,
+        hasWindows: Bool = false,
         detectionPaths: @escaping @Sendable (_ home: String, _ environment: [String: String]) -> [String] = { _, _ in [] }
     ) {
         self.id = id
         self.name = name
         self.inMenuBarByDefault = inMenuBarByDefault
         self.usesKey = usesKey
+        self.hasWindows = hasWindows
         self.detectionPaths = detectionPaths
     }
 }
@@ -88,12 +92,12 @@ public struct ProviderSettings: Equatable, Sendable {
     /// A provider is on when the user turned it on, or when it's detected
     /// and the user hasn't turned it off. One shows in the menu bar by the
     /// user's choice, else by its default; when no provider that's on has
-    /// either, the first one on shows, so the menu bar isn't left blank by
-    /// default.
+    /// either, the first one on with limit windows shows (else the first
+    /// one on), so the menu bar isn't left blank by default.
     public func selection(_ catalog: [ProviderInfo], detected: Set<String>) -> ProviderSelection {
         let on = catalog.filter { enabled[$0.id] ?? detected.contains($0.id) }
         var menuBar = Set(on.filter { inMenuBar[$0.id] ?? $0.inMenuBarByDefault }.map(\.id))
-        if menuBar.isEmpty, on.allSatisfy({ inMenuBar[$0.id] == nil }), let first = on.first {
+        if menuBar.isEmpty, on.allSatisfy({ inMenuBar[$0.id] == nil }), let first = on.first(where: \.hasWindows) ?? on.first {
             menuBar = [first.id]
         }
         return ProviderSelection(enabled: on.map(\.id), menuBar: menuBar)

@@ -1,0 +1,21 @@
+{
+  "_comment": "The rejected body is what api.z.ai/api/monitor/usage/quota/limit answered, with HTTP 200, on 2026-10-14 to a made-up key; open.bigmodel.cn answered the same in Chinese. The 200 before it is synthetic.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "zai": [
+      {
+        "receivedAt": "2026-10-10T14:00:00-07:00",
+        "status": 200,
+        "body": { "code": 200, "msg": "Operation successful", "success": true,
+                  "data": { "limits": [{ "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 40, "nextResetTime": 1791676680000 }], "level": "lite" } }
+      },
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": { "code": 401, "msg": "token expired or incorrect", "success": false }
+      }
+    ]
+  },
+  "providers": { "enabled": ["zai"], "menuBar": ["zai"] }
+}

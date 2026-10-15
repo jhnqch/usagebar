@@ -1,0 +1,35 @@
+{
+  "_comment": "Synthetic: built from the GET /api/monitor/usage/quota/limit shape in zai-org/ZCode docs/bigmodel-coding-plan-usage-quota.md and CodexBar docs/zai.md, not recorded from a real key. unit 3 = hours, 6 = weeks, 5 = months.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "zai": [
+      {
+        "receivedAt": "2026-10-10T14:38:00-07:00",
+        "status": 200,
+        "body": {
+          "code": 200,
+          "msg": "Operation successful",
+          "success": true,
+          "data": {
+            "limits": [
+              { "type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 72, "nextResetTime": 1791676680000 },
+              { "type": "TOKENS_LIMIT", "unit": 6, "number": 1, "percentage": 41, "nextResetTime": 1791900000000 },
+              {
+                "type": "TIME_LIMIT", "unit": 5, "number": 1, "usage": 1000, "currentValue": 224, "remaining": 776,
+                "percentage": 22, "nextResetTime": 1793589300000,
+                "usageDetails": [
+                  { "modelCode": "search-prime", "usage": 210 },
+                  { "modelCode": "web-reader", "usage": 14 },
+                  { "modelCode": "zread", "usage": 0 }
+                ]
+              }
+            ],
+            "level": "pro"
+          }
+        }
+      }
+    ]
+  },
+  "providers": { "enabled": ["zai"], "menuBar": ["zai"] }
+}

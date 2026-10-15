@@ -102,6 +102,6 @@ struct MoonshotTests {
     @Test("both platforms and DeepSeek are in the Providers menu as key providers, after OpenRouter")
     func catalog() {
         let keyed = BuiltInProviders.catalog.filter(\.usesKey).map(\.name)
-        #expect(keyed == ["OpenRouter", "DeepSeek", "Moonshot", "Moonshot China"])
+        #expect(keyed.prefix(4) == ["OpenRouter", "DeepSeek", "Moonshot", "Moonshot China"])
     }
 }

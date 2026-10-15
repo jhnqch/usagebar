@@ -4,7 +4,7 @@ public enum BuiltInProviders {
 
     /// The key providers UsageBar ships, in display order after `all`'s
     /// others. A new one goes here and nowhere else.
-    public static let keyAPIs: [any KeyAPI.Type] = [OpenRouterAPI.self, DeepSeekAPI.self, MoonshotAPI.self, MoonshotChinaAPI.self]
+    public static let keyAPIs: [any KeyAPI.Type] = [OpenRouterAPI.self, DeepSeekAPI.self, MoonshotAPI.self, MoonshotChinaAPI.self, ZaiAPI.self, BigModelAPI.self]
 
     /// What the Providers menu lists and detection checks, in display order.
     public static let catalog: [ProviderInfo] = [ClaudeProvider.info, CodexProvider.info] + keyAPIs.map { $0.info }
@@ -17,7 +17,7 @@ public enum BuiltInProviders {
 extension ClaudeProvider {
     /// Claude shows when Claude Code is set up: its config directory or its
     /// binary in one of the places its installers put it.
-    public static let info = ProviderInfo(id: "claude", name: "Claude", inMenuBarByDefault: true) { home, environment in
+    public static let info = ProviderInfo(id: "claude", name: "Claude", inMenuBarByDefault: true, hasWindows: true) { home, environment in
         [
             environmentPath("CLAUDE_CONFIG_DIR", environment),
             "\(home)/.claude",
@@ -34,7 +34,7 @@ extension ClaudeProvider {
 extension CodexProvider {
     /// Codex shows when its home directory exists or a `codex` binary is
     /// installed, including the one ChatGPT.app bundles.
-    public static let info = ProviderInfo(id: "codex", name: "Codex", inMenuBarByDefault: true) { home, environment in
+    public static let info = ProviderInfo(id: "codex", name: "Codex", inMenuBarByDefault: true, hasWindows: true) { home, environment in
         [environmentPath("CODEX_HOME", environment), "\(home)/.codex"].compactMap(\.self) + executableCandidates(environment)
     }
 

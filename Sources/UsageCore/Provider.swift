@@ -149,6 +149,10 @@ public struct LimitWindow: Equatable, Sendable {
     /// What the window has used so far at API prices, e.g.
     /// "$4.12 · 1.9M tokens this session"; nil where it isn't tracked.
     public var usageText: String?
+    /// The percent used when the source gave one but no reset (or one that
+    /// looked wrong): the meter shows it, without a reset, pace, alerts or
+    /// a menu bar share. Ignored with a `reading`.
+    public var percentWithoutReset: Double?
 
     public init(
         id: String,
@@ -158,7 +162,8 @@ public struct LimitWindow: Equatable, Sendable {
         alertName: String,
         nearAlertName: String? = nil,
         inMenuBar: Bool = true,
-        usageText: String? = nil
+        usageText: String? = nil,
+        percentWithoutReset: Double? = nil
     ) {
         self.id = id
         self.label = label
@@ -168,5 +173,6 @@ public struct LimitWindow: Equatable, Sendable {
         self.nearAlertName = nearAlertName ?? alertName
         self.inMenuBar = inMenuBar
         self.usageText = usageText
+        self.percentWithoutReset = percentWithoutReset
     }
 }

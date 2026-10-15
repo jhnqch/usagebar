@@ -104,6 +104,11 @@ public enum UsageEngine {
 
     private static func meter(_ window: LimitWindow, clock: Clock) -> Meter {
         guard let reading = window.reading else {
+            if let percent = window.percentWithoutReset {
+                return Meter(id: window.id, label: window.label, percentText: percentText(percent),
+                             fraction: min(max(percent, 0), 100) / 100, level: Level(percent: percent), resetText: nil,
+                             usageText: window.usageText)
+            }
             return Meter(id: window.id, label: window.label, percentText: "—", fraction: 0, level: .normal, resetText: nil,
                          usageText: window.usageText)
         }

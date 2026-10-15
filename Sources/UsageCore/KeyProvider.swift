@@ -44,6 +44,10 @@ public protocol KeyAPI: Sendable {
     /// than one request overrides it; every request goes through `client`,
     /// which adds the key and refuses any other host.
     static func fetch(_ client: KeyClient) async -> PollOutcome
+    /// What an answer means, before the policy reads it. Defaults to the
+    /// answer as it came. An API that reports errors in a 200's body (z.ai)
+    /// turns them into the status they stand for.
+    static func interpret(_ outcome: PollOutcome) -> PollOutcome
 
     /// A 200 answer as a reading; nil when nothing in it is readable. A
     /// missing, renamed or mistyped field should leave only its own part of
@@ -59,6 +63,9 @@ public protocol KeyAPI: Sendable {
 
     /// Where to get a key, shown in the key window: "openrouter.ai/settings/keys".
     static var keyHint: String? { get }
+    /// Whether its rows are limit windows: then, with Claude and Codex not
+    /// on, it's the one the menu bar shows by default. Defaults to false.
+    static var hasLimitWindows: Bool { get }
 }
 
 extension KeyAPI {
@@ -66,10 +73,12 @@ extension KeyAPI {
     public static func authorization(key: String) -> String { "Bearer \(key)" }
     public static func fetch(_ client: KeyClient) async -> PollOutcome { await client.get(endpoint) }
     public static var keyHint: String? { nil }
+    public static func interpret(_ outcome: PollOutcome) -> PollOutcome { outcome }
+    public static var hasLimitWindows: Bool { false }
 
     /// What the Providers menu and detection know about it: a key
     /// provider, shown once its key is saved.
-    public static var info: ProviderInfo { ProviderInfo(id: id, name: name, usesKey: true) }
+    public static var info: ProviderInfo { ProviderInfo(id: id, name: name, usesKey: true, hasWindows: hasLimitWindows) }
 
     /// The provider with no readings yet, for the app's starting readings.
     public static var emptyProvider: any Provider { KeyProvider<Self>() }
@@ -289,7 +298,7 @@ struct KeyPolling<API: KeyAPI>: Sendable {
 
     @discardableResult
     mutating func finish(_ outcome: PollOutcome, at now: Date) -> Finished {
-        switch outcome {
+        switch API.interpret(outcome) {
         case let .response(200, body, _):
             schedule.endBackoff()
             if let reading = API.reading(fromResponse: body, receivedAt: now) {
@@ -458,7 +467,7 @@ public final class KeyPoller<API: KeyAPI> {
             return .noKey
         }
         let outcome = await API.fetch(KeyClient(API.self, key: candidate, transport: transport, userAgent: userAgent))
-        switch outcome {
+        switch API.interpret(outcome) {
         case let .response(200, body, _):
             return API.reading(fromResponse: body, receivedAt: now()) == nil
                 ? .failed(KeyProvider<API>.note(.unreadable)) : .connected
