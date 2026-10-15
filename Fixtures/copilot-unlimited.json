@@ -1,5 +1,5 @@
 {
-  "_comment": "Synthetic, not recorded from a real token. The body is what CopilotAPI.fetch builds from its requests to api.github.com: GET /user (login), GET /users/{login}/settings/billing/premium_request/usage?year=&month= (documented: docs.github.com/en/rest/billing/usage) and, with the premium requests meter on, the undocumented GET /copilot_internal/user (shape from CodexBar's CopilotUsageModels tests). A plan with unlimited premium requests, past its 1,500-request mark, billed nothing beyond it.",
+  "_comment": "Synthetic, not recorded from a real token. The body is what CopilotAPI.fetch builds from its requests to api.github.com: GET /user (login), GET /users/{login}/settings/billing/ai_credit/usage and .../premium_request/usage?year=&month= (documented: docs.github.com/en/rest/billing/usage) and, with the quota meter option on, the undocumented GET /copilot_internal/user (shape from CodexBar's Copilot tests). A plan on premium-request billing with unlimited premium requests.",
   "now": "2026-10-14T10:00:00-07:00",
   "timeZone": "America/Los_Angeles",
   "readings": {
@@ -16,6 +16,17 @@
           "period": {
             "year": 2026,
             "month": 10
+          },
+          "aiCredits": {
+            "status": 200,
+            "body": {
+              "timePeriod": {
+                "year": 2026,
+                "month": 10
+              },
+              "user": "mona-example",
+              "usageItems": []
+            }
           },
           "billing": {
             "status": 200,
@@ -72,8 +83,8 @@
             "status": 200,
             "body": {
               "login": "mona-example",
-              "access_type_sku": "copilot_enterprise_seat_quota",
-              "copilot_plan": "enterprise",
+              "access_type_sku": "yearly_subscriber_quota",
+              "copilot_plan": "individual",
               "chat_enabled": true,
               "assigned_date": "2025-03-02T18:21:44-08:00",
               "quota_reset_date": "2026-11-01",

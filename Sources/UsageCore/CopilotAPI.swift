@@ -1,13 +1,17 @@
 import Foundation
 
 /// GitHub Copilot, read with a fine-grained personal access token from
-/// api.github.com and nowhere else. One poll is two or three requests:
+/// api.github.com and nowhere else. One poll is three or four requests:
 ///
 /// 1. `GET /user`: the token's username. Any token can read it.
-/// 2. `GET /users/{username}/settings/billing/premium_request/usage?year=&month=`,
-///    documented (https://docs.github.com/en/rest/billing/usage), for this
-///    UTC month; the token needs the "Plan" user permission (read). Its
-///    answer, abridged:
+/// 2. `GET /users/{username}/settings/billing/ai_credit/usage?year=&month=`
+///    and
+/// 3. `GET /users/{username}/settings/billing/premium_request/usage?year=&month=`,
+///    both documented (https://docs.github.com/en/rest/billing/usage), for
+///    this UTC month; the token needs the "Plan" user permission (read).
+///    Since 1 June 2026 Copilot bills in AI credits (1 credit = $0.01);
+///    only annual Pro and Pro+ plans that stayed on the old billing still
+///    count premium requests. Both answers look like this, abridged:
 ///
 ///    ```json
 ///    { "timePeriod": { "year": 2026, "month": 10 }, "user": "mona",
@@ -16,26 +20,29 @@ import Foundation
 ///                       "discountQuantity": 60, "discountAmount": 2.4, "netQuantity": 0, "netAmount": 0 }] }
 ///    ```
 ///
-///    It covers only a plan the user pays for: a seat from an organization
-///    or enterprise is reported to it, so here the report is empty.
-/// 3. With the "Premium requests meter" option on, the undocumented
+///    They cover only a plan the user pays for: a seat from an organization
+///    or enterprise is reported to it, so here the reports are empty.
+/// 4. With the "Quota meter and plan" option on, the undocumented
 ///    `GET /copilot_internal/user`, which Copilot's own clients read:
-///    `copilot_plan`, `quota_reset_date(_utc)` and
+///    `copilot_plan`, `token_based_billing`, `quota_reset_date(_utc)` and
 ///    `quota_snapshots.premium_interactions{entitlement, remaining,
-///    percent_remaining, unlimited}`. CodexBar reads it with an OAuth token;
-///    GitHub's Copilot CLI accepts a fine-grained token with the "Copilot
-///    Requests" permission, which is what this asks for.
+///    percent_remaining, unlimited, credits_used}`. On premium-request
+///    billing that's a meter (or "Unlimited"); on AI-credit billing it gives
+///    no limit, only the credits a seat used. CodexBar reads it with an
+///    OAuth token; GitHub's Copilot CLI accepts a fine-grained token with
+///    the "Copilot Requests" permission, which is what this asks for.
 ///
 /// `fetch` folds the answers into one body, which is what fixtures record:
 ///
 /// ```json
 /// { "user": { "login": "mona" }, "period": { "year": 2026, "month": 10 },
+///   "aiCredits": { "status": 200, "body": { … } },
 ///   "billing": { "status": 200, "body": { … } },
 ///   "copilotInternal": { "status": 200, "body": { … } } }
 /// ```
 ///
 /// A refused `GET /user` is a rejected token; a 429, 5xx or network error on
-/// it or the report keeps the last reading and backs off. Anything else the
+/// it or a report keeps the last reading and backs off. Anything else a
 /// report or the meter endpoint answers degrades only its own row, with a
 /// note saying why.
 public enum CopilotAPI: KeyAPI {
@@ -45,10 +52,10 @@ public enum CopilotAPI: KeyAPI {
     public static let systemImage = "airplane"
     public static let endpoint = URL(string: "https://api.github.com/user")!
     public static let keyHint: String? =
-        "Create a fine-grained token at github.com/settings/personal-access-tokens with the Plan permission (read); the premium requests meter also needs Copilot Requests (read)"
+        "Create a fine-grained token at github.com/settings/personal-access-tokens with the Plan permission (read); the quota meter also needs Copilot Requests (read)"
 
-    /// The meter from the undocumented `copilot_internal/user`.
-    public static let meterOption = KeyOption(id: "copilotInternal", title: "Premium requests meter", detail: "Uses an undocumented GitHub endpoint")
+    /// The meter and plan badge from the undocumented `copilot_internal/user`.
+    public static let meterOption = KeyOption(id: "copilotInternal", title: "Quota meter and plan", detail: "Uses an undocumented GitHub endpoint")
     public static var options: [KeyOption] { [meterOption] }
 
     /// GitHub's documented REST API, as its docs ask for it.
@@ -64,25 +71,25 @@ public enum CopilotAPI: KeyAPI {
         guard let login = login(in: userBody) else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
 
         let month = utc.dateComponents([.year, .month], from: client.startedAt)
-        guard let year = month.year, let monthNumber = month.month,
-              let reportURL = URL(string: "https://api.github.com/users/\(login)/settings/billing/premium_request/usage?year=\(year)&month=\(monthNumber)")
-        else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
-
-        let report = await client.get(reportURL, headers: restHeaders)
-        switch report {
-        case .networkError, .blocked, .noCredentials:
-            return report
-        case let .response(status, _, _) where status == 401 || status == 429 || (500...599).contains(status):
-            return report
-        case .response:
-            break
-        }
+        guard let year = month.year, let monthNumber = month.month else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
 
         var combined: [String: Any] = [
             "user": ["login": login],
             "period": ["year": year, "month": monthNumber],
-            "billing": part(report),
         ]
+        for (key, report) in [("aiCredits", "ai_credit"), ("billing", "premium_request")] {
+            guard let url = URL(string: "https://api.github.com/users/\(login)/settings/billing/\(report)/usage?year=\(year)&month=\(monthNumber)")
+            else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
+            let answer = await client.get(url, headers: restHeaders)
+            switch answer {
+            case .networkError, .blocked, .noCredentials:
+                return answer
+            case let .response(status, _, _) where status == 401 || status == 429 || (500...599).contains(status):
+                return answer
+            case .response:
+                combined[key] = part(answer)
+            }
+        }
         if client.options.contains(meterOption.id) {
             combined["copilotInternal"] = part(await client.get(URL(string: "https://api.github.com/copilot_internal/user")!, headers: internalHeaders))
         }
@@ -113,43 +120,64 @@ public enum CopilotAPI: KeyAPI {
         }
     }
 
+    /// With the meter option off, the meter's reading goes at once, rather
+    /// than when the next answer comes.
+    public static func applying(options: Set<String>, to reading: Reading) -> Reading {
+        guard !options.contains(meterOption.id) else { return reading }
+        var copy = reading
+        copy.quota = nil
+        return copy
+    }
+
+    /// A token that can't read either report shows nothing useful.
+    public static func connectionProblem(_ reading: Reading) -> String? {
+        reading.aiCredits == .forbidden && reading.premiumRequests == .forbidden ? forbiddenNote : nil
+    }
+
     // MARK: Reading
 
     public struct Reading: Equatable, Sendable {
         public var login: String?
-        /// When the UTC month the report covers ends: midnight UTC on the
+        /// When the UTC month the reports cover ends: midnight UTC on the
         /// next 1st.
         public var monthEnds: Date?
-        public var billing: Billing
+        /// The AI credit report: empty when the answer had none.
+        public var aiCredits: Billing
+        /// The premium request report (old billing).
+        public var premiumRequests: Billing
         /// Nil with the meter option off.
         public var quota: Quota?
     }
 
-    /// What the premium request report said.
+    /// What a usage report said.
     public enum Billing: Equatable, Sendable {
         case usage(Usage)
         /// 403: the token lacks the Plan permission.
         case forbidden
         /// Another status (nil: no answer).
         case failed(Int?)
-        /// A 200 without `usageItems`.
+        /// A 200 without readable `usageItems`.
         case unreadable
+
+        var usage: Usage? {
+            if case let .usage(usage) = self { usage } else { nil }
+        }
     }
 
     public struct Usage: Equatable, Sendable {
-        /// `grossQuantity`, all models.
-        public var requests: Double = 0
-        /// `grossAmount`: the requests at list price.
+        /// `grossQuantity`, all models: credits or requests.
+        public var quantity: Double = 0
+        /// `grossAmount`: the usage at list price.
         public var listPrice: Double?
         /// `netAmount`: what's billed beyond the plan's allowance.
         public var billed: Double?
-        /// Requests by model, most first.
-        public var models: [ModelRequests] = []
+        /// Quantity by model, most first.
+        public var models: [ModelUsage] = []
     }
 
-    public struct ModelRequests: Equatable, Sendable {
+    public struct ModelUsage: Equatable, Sendable {
         public var model: String
-        public var requests: Double
+        public var quantity: Double
     }
 
     /// What `copilot_internal/user` said.
@@ -158,9 +186,14 @@ public enum CopilotAPI: KeyAPI {
         public var status: Int?
         /// `copilot_plan`: "individual", "business", …
         public var plan: String?
+        /// On AI-credit billing (`token_based_billing`, or a premium
+        /// snapshot of zeros): no limit to meter.
+        public var creditBilling = false
+        /// `credits_used` on AI-credit billing.
+        public var creditsUsed: Double?
         public var premium: Premium?
-        /// The next reset: from the answer when it's plausible, else
-        /// midnight UTC on the next 1st.
+        /// The reset: from the answer when it's plausible, else midnight UTC
+        /// on the next 1st.
         public var resetsAt: Date?
         /// The window's length, for pace: the calendar month (UTC) before
         /// the reset.
@@ -173,9 +206,9 @@ public enum CopilotAPI: KeyAPI {
     }
 
     public static func reading(fromResponse body: Data, receivedAt: Date) -> Reading? {
-        guard let root = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
+        guard let root = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let premiumPart = root["billing"] as? [String: Any] else { return nil }
         let login = (root["user"] as? [String: Any])?["login"] as? String
-        guard let billingPart = root["billing"] as? [String: Any] else { return nil }
 
         let period = root["period"] as? [String: Any]
         let monthEnds: Date? = {
@@ -186,7 +219,8 @@ public enum CopilotAPI: KeyAPI {
         }()
 
         let meter = (root["copilotInternal"] as? [String: Any]).map { quota($0, receivedAt: receivedAt) }
-        return Reading(login: login, monthEnds: monthEnds, billing: billing(billingPart), quota: meter)
+        let credits = (root["aiCredits"] as? [String: Any]).map(billing) ?? .usage(Usage())
+        return Reading(login: login, monthEnds: monthEnds, aiCredits: credits, premiumRequests: billing(premiumPart), quota: meter)
     }
 
     private static func billing(_ part: [String: Any]) -> Billing {
@@ -197,18 +231,20 @@ public enum CopilotAPI: KeyAPI {
         var byModel: [String: Double] = [:]
         var order: [String] = []
         for case let item as [String: Any] in items {
-            guard let requests = Amount.number(item["grossQuantity"]) else { continue }
-            usage.requests += requests
+            guard let quantity = Amount.number(item["grossQuantity"]) else { continue }
+            usage.quantity += quantity
             if let list = Amount.number(item["grossAmount"]) { usage.listPrice = (usage.listPrice ?? 0) + list }
             if let net = Amount.number(item["netAmount"]) { usage.billed = (usage.billed ?? 0) + net }
             let model = (item["model"] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? "Other models"
             if byModel[model] == nil { order.append(model) }
-            byModel[model, default: 0] += requests
+            byModel[model, default: 0] += quantity
         }
-        // Most requests first; ties in the report's order.
-        let models = order.map { ModelRequests(model: $0, requests: byModel[$0] ?? 0) }
+        // Items with no count read are no report, not an empty one.
+        if !items.isEmpty && order.isEmpty { return .unreadable }
+        // Most first; ties in the report's order.
+        let models = order.map { ModelUsage(model: $0, quantity: byModel[$0] ?? 0) }
         usage.models = models.enumerated().sorted { a, b in
-            a.element.requests != b.element.requests ? a.element.requests > b.element.requests : a.offset < b.offset
+            a.element.quantity != b.element.quantity ? a.element.quantity > b.element.quantity : a.offset < b.offset
         }.map(\.element)
         return .usage(usage)
     }
@@ -221,20 +257,34 @@ public enum CopilotAPI: KeyAPI {
 
         let given = (body["quota_reset_date_utc"] as? String).flatMap(isoDate)
             ?? (body["quota_reset_date"] as? String).flatMap(dayDate)
-        // A reset in the past or beyond next month is wrong: the next 1st.
-        let resetsAt = given.flatMap { $0 > receivedAt && $0.timeIntervalSince(receivedAt) <= 32 * 86400 ? $0 : nil } ?? nextFirst(after: receivedAt)
+        // A reset more than a day before the answer, or beyond next month,
+        // is wrong: the next 1st. One just passed (the month turned while
+        // the answer was on its way) stays, so the meter reads 0%.
+        let resetsAt = given.flatMap {
+            $0.timeIntervalSince(receivedAt) > -86400 && $0.timeIntervalSince(receivedAt) <= 32 * 86400 ? $0 : nil
+        } ?? nextFirst(after: receivedAt)
         quota.resetsAt = resetsAt
         quota.minutes = resetsAt.flatMap { reset in
             utc.date(byAdding: .month, value: -1, to: reset).map { Int(reset.timeIntervalSince($0) / 60) }
         }
 
-        guard let premium = (body["quota_snapshots"] as? [String: Any])?["premium_interactions"] as? [String: Any] else { return quota }
-        if premium["unlimited"] as? Bool == true {
-            quota.premium = .unlimited
+        guard let premium = (body["quota_snapshots"] as? [String: Any])?["premium_interactions"] as? [String: Any] else {
+            quota.creditBilling = body["token_based_billing"] as? Bool == true
             return quota
         }
         let entitlement = Amount.number(premium["entitlement"])
         let remaining = Amount.number(premium["remaining"])
+        quota.creditsUsed = Amount.number(premium["credits_used"])
+        // On AI-credit billing the premium snapshot is a placeholder: zeros,
+        // sometimes marked unlimited. It's no limit to meter.
+        if body["token_based_billing"] as? Bool == true || (premium["unlimited"] as? Bool != true && entitlement == 0 && remaining == 0) {
+            quota.creditBilling = true
+            return quota
+        }
+        if premium["unlimited"] as? Bool == true {
+            quota.premium = .unlimited
+            return quota
+        }
         let used = entitlement.flatMap { entitlement in remaining.map { entitlement - $0 } }
         let percent = Amount.number(premium["percent_remaining"]).map { 100 - $0 }
             ?? entitlement.flatMap { entitlement in used.flatMap { entitlement > 0 ? $0 / entitlement * 100 : nil } }
@@ -246,17 +296,35 @@ public enum CopilotAPI: KeyAPI {
 
     // MARK: Report
 
+    private static let forbiddenNote = "This token can't read billing: give it the Plan permission (read)"
+
     public static func report(_ reading: Reading?, clock: Clock) -> ProviderReport {
         var rows: [ProviderReport.Row] = []
         var notes: [String] = []
         let quota = reading?.quota
         let orgSeat = quota?.plan.map { ["business", "enterprise"].contains($0.lowercased()) } ?? false
+        let credits = reading?.aiCredits.usage
+        let requests = reading?.premiumRequests.usage
+        let creditsEmpty = credits?.models.isEmpty ?? true
+        let requestsEmpty = requests?.models.isEmpty ?? true
+        // The reports belong to a UTC month; once it ends they no longer hold.
+        let monthHolds = reading?.monthEnds.map { $0 > clock.now } ?? false
 
         if let quota {
-            rows.append(premiumRow(quota, clock: clock))
+            if quota.creditBilling {
+                // A seat's AI credits, where no report of the user's has them.
+                if creditsEmpty, let used = quota.creditsUsed {
+                    let holds = quota.resetsAt.map { $0 > clock.now } ?? true
+                    rows.append(.value(ValueRow(id: "copilot.credits", label: "AI credits used", value: holds ? Amount(used, .count("")) : nil)))
+                }
+            } else if quota.status == 200 || quota.premium != nil {
+                rows.append(premiumRow(quota, clock: clock))
+            } else {
+                rows.append(.window(window(reading: nil, minutes: quota.minutes, usage: nil)))
+            }
             switch quota.status {
-            case 200 where quota.premium == nil:
-                notes.append("Couldn't read the premium requests quota from GitHub's undocumented Copilot endpoint")
+            case 200 where quota.premium == nil && !quota.creditBilling:
+                notes.append("Couldn't read the quota from GitHub's undocumented Copilot endpoint")
             case 200:
                 break
             case let status? where [401, 403, 404].contains(status):
@@ -268,31 +336,38 @@ public enum CopilotAPI: KeyAPI {
             }
         }
 
-        var month = ValueRow(id: "copilot.month", label: "This month", value: nil)
-        switch reading?.billing {
-        case let .usage(usage)? where usage.models.isEmpty && orgSeat:
-            notes.append("Your Copilot seat is billed to an organization, so GitHub reports its premium requests there")
-        case let .usage(usage)?:
-            // The UTC month the report covered has ended: it no longer holds.
-            if let ends = reading?.monthEnds, ends > clock.now {
-                month.value = Amount(usage.requests, .count("premium requests"))
-                month.detail = detail(usage)
+        // AI credits, today's billing, unless only the old premium request
+        // billing has anything.
+        if !(creditsEmpty && !requestsEmpty) {
+            var row = ValueRow(id: "copilot.month", label: "This month", value: nil)
+            if let credits, monthHolds, !(creditsEmpty && orgSeat) {
+                row.value = Amount(credits.quantity, .count("AI credits"))
+                row.detail = detail(credits)
             }
-            if usage.models.isEmpty {
-                notes.append("Nothing billed to your personal account this month; a seat from an organization is reported to it")
-            }
-        case .forbidden?:
-            notes.append("This token can't read billing: give it the Plan permission (read)")
-        case .unreadable?:
-            notes.append("Couldn't read the premium request usage from \(hostText)")
-        case let .failed(status?)?:
-            notes.append("\(hostText) answered HTTP \(status) for the premium request usage")
-        case .failed(nil)?:
-            notes.append("Couldn't read the premium request usage from \(hostText)")
-        case nil:
-            break
+            rows.append(.value(row))
         }
-        rows.append(.value(month))
+        if let requests, !requestsEmpty {
+            rows.append(.value(ValueRow(id: "copilot.premiumRequests", label: "This month",
+                                        value: monthHolds ? Amount(requests.quantity, .count("premium requests")) : nil,
+                                        detail: detail(requests))))
+        }
+
+        if creditsEmpty && requestsEmpty && reading != nil {
+            if reading?.aiCredits == .forbidden || reading?.premiumRequests == .forbidden {
+                notes.append(forbiddenNote)
+            } else if credits != nil && requests != nil {
+                notes.append(orgSeat
+                    ? "Your Copilot seat is billed to an organization, so GitHub reports its usage there"
+                    : "Nothing billed to your personal account this month; a seat from an organization is reported to it")
+            }
+        }
+        for (billing, what) in [(reading?.aiCredits, "AI credit"), (reading?.premiumRequests, "premium request")] {
+            switch billing {
+            case .unreadable?, .failed(nil)?: notes.append("Couldn't read the \(what) usage from \(hostText)")
+            case let .failed(status?)?: notes.append("\(hostText) answered HTTP \(status) for the \(what) usage")
+            default: break
+            }
+        }
 
         return ProviderReport(plan: quota?.plan.map(planBadge), rows: rows, note: notes.isEmpty ? nil : notes.joined(separator: "\n"))
     }
@@ -321,7 +396,7 @@ public enum CopilotAPI: KeyAPI {
     }
 
     /// "$8.56 at list price, nothing billed beyond the plan", then the
-    /// requests by model.
+    /// usage by model.
     private static func detail(_ usage: Usage) -> String? {
         guard !usage.models.isEmpty else { return nil }
         let money: String? = switch (usage.listPrice, usage.billed) {
@@ -333,7 +408,7 @@ public enum CopilotAPI: KeyAPI {
         case (nil, nil): nil
         }
         // Each model and its count wrap as one: "Claude Opus 4.1 230".
-        let shown = usage.models.prefix(3).map { "\($0.model) \(Amount($0.requests, .count("")).text)".replacingOccurrences(of: " ", with: "\u{00A0}") }
+        let shown = usage.models.prefix(3).map { "\($0.model) \(Amount($0.quantity, .count("")).text)".replacingOccurrences(of: " ", with: "\u{00A0}") }
         let rest = usage.models.count > 3 ? ["+\(usage.models.count - 3) more"] : []
         return ([money].compactMap(\.self) + [(shown + rest).joined(separator: " · ")]).joined(separator: "\n")
     }

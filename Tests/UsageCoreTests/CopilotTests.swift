@@ -43,11 +43,13 @@ struct CopilotTests {
 
     /// A fetched body for `copilot` received at `receivedAt`, read at `now`.
     func section(
+        credits: String? = #"{ "status": 200, "body": { "usageItems": [] } }"#,
         billing: String? = #"{ "status": 200, "body": { "usageItems": [] } }"#, quota: String? = nil, user: String = #"{ "login": "mona-example" }"#,
         period: String = #"{ "year": 2026, "month": 10 }"#,
         now: String = "2026-10-14T10:00:00-07:00", receivedAt: String = "2026-10-14T09:58:00-07:00", timeZone: String = "America/Los_Angeles"
     ) throws -> ProviderSection {
         var parts = [#""user": \#(user)"#, #""period": \#(period)"#]
+        if let credits { parts.append(#""aiCredits": \#(credits)"#) }
         if let billing { parts.append(#""billing": \#(billing)"#) }
         if let quota { parts.append(#""copilotInternal": \#(quota)"#) }
         let json = #"""
@@ -63,9 +65,22 @@ struct CopilotTests {
         #"{ "status": 200, "body": { "copilot_plan": "\#(plan)"\#(extra), "quota_snapshots": { "premium_interactions": \#(premium) } } }"#
     }
 
-    @Test("a personal plan: a premium requests meter resetting on the 1st (UTC), and this month's requests with per-model detail")
+    @Test("a personal plan on AI-credit billing: this month's credits with per-model detail, and no meter, which GitHub gives no limit for")
     func personal() throws {
         let snapshot = try snapshot("copilot-personal")
+        #expect(snapshot.sections.map(\.name) == ["GitHub Copilot"])
+        let section = try #require(snapshot["copilot"])
+        #expect(section.plan == "Pro")
+        #expect(section.updatedText == "Updated 2 min ago")
+        #expect(texts(section) == ["This month 612.4 AI credits"])
+        #expect(detail(values(section).first) == "$6.13 at list price, nothing billed beyond the plan\nClaude Sonnet 4.5 402.5 · GPT-5 150.9 · Gemini 2.5 Pro 59")
+        #expect(section.note == nil)
+        #expect(snapshot.menuBar.parts.isEmpty)
+    }
+
+    @Test("an annual plan on premium-request billing: a meter resetting on the 1st (UTC), and this month's requests with per-model detail")
+    func legacyAnnual() throws {
+        let snapshot = try snapshot("copilot-legacy-annual")
         #expect(snapshot.sections.map(\.name) == ["GitHub Copilot"])
         let section = try #require(snapshot["copilot"])
         #expect(section.plan == "Pro")
@@ -86,19 +101,19 @@ struct CopilotTests {
         #expect(snapshot.menuBar.text == "⊚ 71%")
     }
 
-    @Test("an organization's seat: the meter shows, the spend row is a dash, and the note says why")
+    @Test("an organization's seat: the credits it used, the spend row a dash, and a note saying why")
     func orgSeat() throws {
         let section = try #require(try snapshot("copilot-org-seat")["copilot"])
         #expect(section.plan == "Business")
-        #expect(texts(section) == ["Premium requests 15% · Resets Sat Oct 31 5:00 PM", "This month —"])
-        #expect(section.note == "Your Copilot seat is billed to an organization, so GitHub reports its premium requests there")
+        #expect(texts(section) == ["AI credits used 45", "This month —"])
+        #expect(section.note == "Your Copilot seat is billed to an organization, so GitHub reports its usage there")
     }
 
     @Test("an unlimited plan shows Unlimited rather than a meter")
     func unlimited() throws {
         let snapshot = try snapshot("copilot-unlimited")
         let section = try #require(snapshot["copilot"])
-        #expect(section.plan == "Enterprise")
+        #expect(section.plan == "Pro")
         #expect(texts(section) == ["Premium requests Unlimited", "This month 1,842 premium requests"])
         #expect(meters(section).isEmpty)
         #expect(detail(values(section).last) == "$73.68 at list price, nothing billed beyond the plan\nClaude Sonnet 4.5 1,210 · GPT-5 402 · Claude Opus 4.1 230")
@@ -110,7 +125,7 @@ struct CopilotTests {
     func optionOff() throws {
         let section = try section()
         #expect(section.plan == nil)
-        #expect(texts(section) == ["This month 0 premium requests"])
+        #expect(texts(section) == ["This month 0 AI credits"])
         #expect(section.note == "Nothing billed to your personal account this month; a seat from an organization is reported to it")
     }
 
@@ -158,7 +173,7 @@ struct CopilotTests {
 
     @Test("a rebased fixture keeps the reading where it sat")
     func rebased() throws {
-        let fixture = try loadFixture("copilot-personal")
+        let fixture = try loadFixture("copilot-legacy-annual")
         let later = fixture.now + 86400
         let section = try #require(UsageEngine.snapshot(from: fixture.readings(rebasedTo: later), now: later, timeZone: fixture.timeZone)["copilot"])
         #expect(section.updatedText == "Updated 2 min ago")
@@ -179,6 +194,16 @@ struct CopilotTests {
         #expect(texts(junk).first == "Premium requests 50% · Resets Sat Oct 31 5:00 PM")
     }
 
+    /// The answer left just before midnight UTC on 1 Nov and arrived just
+    /// after: its reset has passed, so the full meter is last month's.
+    @Test("a reset that passed while the answer was on its way stays, so the meter reads 0% rather than full for another month")
+    func resetJustPassed() throws {
+        let full = #"{ "entitlement": 300, "remaining": 0, "percent_remaining": 0, "unlimited": false }"#
+        let section = try section(quota: internalAnswer(full), now: "2026-10-31T17:02:00-07:00", receivedAt: "2026-10-31T17:00:30-07:00")
+        #expect(texts(section).first == "Premium requests 0% · Reset at 5:00 PM")
+        #expect(meters(section).first?.usageText == nil)
+    }
+
     @Test("the percent comes from percent_remaining, or the counts; past the entitlement it reads 100%")
     func percents() throws {
         let counts = try section(quota: internalAnswer(#"{ "entitlement": "300", "remaining": 75 }"#))
@@ -192,12 +217,17 @@ struct CopilotTests {
     func tolerant() throws {
         let noPremium = try section(quota: #"{ "status": 200, "body": { "copilot_plan": "individual", "quota_snapshots": {} } }"#)
         #expect(noPremium.plan == "Pro")
-        #expect(texts(noPremium) == ["Premium requests —", "This month 0 premium requests"])
-        #expect(noPremium.note?.contains("Couldn't read the premium requests quota") == true)
+        #expect(texts(noPremium) == ["Premium requests —", "This month 0 AI credits"])
+        #expect(noPremium.note?.contains("Couldn't read the quota") == true)
 
-        let renamed = try section(billing: #"{ "status": 200, "body": { "items": [] } }"#)
+        let renamed = try section(credits: #"{ "status": 200, "body": { "items": [] } }"#)
         #expect(texts(renamed) == ["This month —"])
-        #expect(renamed.note == "Couldn't read the premium request usage from api.github.com")
+        #expect(renamed.note == "Couldn't read the AI credit usage from api.github.com")
+
+        // Items, but no count in any: unknown, not zero.
+        let noCounts = try section(credits: #"{ "status": 200, "body": { "usageItems": [{ "model": "GPT-5", "quantity": 12 }] } }"#)
+        #expect(texts(noCounts) == ["This month —"])
+        #expect(noCounts.note == "Couldn't read the AI credit usage from api.github.com")
 
         let oddItems = try section(billing: #"{ "status": 200, "body": { "usageItems": [7, { "model": "GPT-5" }, { "grossQuantity": 3, "grossAmount": 0.12 }, null] } }"#)
         #expect(texts(oddItems) == ["This month 3 premium requests"])
@@ -209,13 +239,14 @@ struct CopilotTests {
 
     @Test("a token without billing access, or a refused meter endpoint, says so under rows that show dashes")
     func partialFailures() throws {
-        let noPlanPermission = try section(billing: #"{ "status": 403, "body": { "message": "Resource not accessible by personal access token" } }"#,
+        let forbidden = #"{ "status": 403, "body": { "message": "Resource not accessible by personal access token" } }"#
+        let noPlanPermission = try section(credits: forbidden, billing: forbidden,
                                            quota: internalAnswer(#"{ "entitlement": 300, "remaining": 150 }"#))
         #expect(texts(noPlanPermission) == ["Premium requests 50% · Resets Sat Oct 31 5:00 PM", "This month —"])
         #expect(noPlanPermission.note == "This token can't read billing: give it the Plan permission (read)")
 
         let refused = try section(quota: #"{ "status": 404, "body": { "message": "Not Found" } }"#)
-        #expect(texts(refused) == ["Premium requests —", "This month 0 premium requests"])
+        #expect(texts(refused) == ["Premium requests —", "This month 0 AI credits"])
         #expect(refused.note?.hasPrefix("GitHub's undocumented Copilot endpoint answered HTTP 404: give the token the Copilot Requests permission (read)") == true)
 
         let unreachable = try section(quota: #"{ "status": null }"#)
@@ -259,6 +290,7 @@ struct CopilotRequestTests {
         // 6 PM on 31 Oct in Los Angeles is 1 Nov in UTC: November's report.
         #expect(urls == [
             "https://api.github.com/user",
+            "https://api.github.com/users/mona-example/settings/billing/ai_credit/usage?year=2026&month=11",
             "https://api.github.com/users/mona-example/settings/billing/premium_request/usage?year=2026&month=11",
         ])
         for request in transport.requests {
@@ -273,25 +305,37 @@ struct CopilotRequestTests {
 
     @Test("with the meter option on, it also asks copilot_internal/user on api.github.com, and only then")
     func meterOption() async throws {
-        let transport = FakeTransport(user, report, quota)
+        let transport = FakeTransport(user, report, report, quota)
         let poller = poller(transport)
         poller.setOptions([CopilotAPI.meterOption.id])
         await poller.poll(.timer)
         let last = try #require(transport.requests.last)
-        #expect(transport.requests.count == 3)
+        #expect(transport.requests.count == 4)
         #expect(last.url?.absoluteString == "https://api.github.com/copilot_internal/user")
         #expect(last.value(forHTTPHeaderField: "Authorization") == "Bearer \(fakeKey)")
         #expect(last.value(forHTTPHeaderField: "Accept") == "application/json")
         let section = try #require(UsageEngine.snapshot(from: Readings([poller.provider]), now: date("2026-10-31T18:00:00-07:00"), timeZone: losAngeles)["copilot"])
-        #expect(section.rows.map(\.id) == ["copilot.premium", "copilot.month"])
+        #expect(section.rows.map(\.id) == ["copilot.premium", "copilot.month", "copilot.premiumRequests"])
 
-        // Turned off, the next poll asks two things and the meter goes.
+        // Turned off, the meter goes at once, before any answer, and the
+        // next poll leaves copilot_internal out.
         transport.answer(user, report)
         poller.setOptions([])
+        let hidden = try #require(UsageEngine.snapshot(from: Readings([poller.provider]), now: date("2026-10-31T18:00:00-07:00"), timeZone: losAngeles)["copilot"])
+        #expect(hidden.rows.map(\.id) == ["copilot.month", "copilot.premiumRequests"])
         #expect(poller.isDue(.popover, at: date("2026-10-31T18:00:00-07:00")))
         await poller.poll(.popover)
-        #expect(transport.requests.count == 5)
+        #expect(transport.requests.count == 7)
         #expect(transport.requests.last?.url?.path == "/users/mona-example/settings/billing/premium_request/usage")
+    }
+
+    @Test("a token that can read neither billing report fails Test connection, though polling shows its other rows")
+    func connectionWithoutBilling() async {
+        let forbidden = PollOutcome.response(status: 403, body: Data(#"{ "message": "Resource not accessible by personal access token" }"#.utf8))
+        let refused = poller(FakeTransport(user, forbidden, forbidden))
+        #expect(await refused.testConnection(key: nil) == .failed("This token can't read billing: give it the Plan permission (read)"))
+        let readable = poller(FakeTransport(user, report, forbidden))
+        #expect(await readable.testConnection(key: nil) == .connected)
     }
 
     @Test("a token GET /user rejects is \"Key rejected\", and nothing else is asked")
@@ -306,7 +350,7 @@ struct CopilotRequestTests {
 
     @Test("a 429 or 5xx on the report keeps the last reading and backs off")
     func transient() async {
-        let transport = FakeTransport(user, report, user, .response(status: 503, body: Data()))
+        let transport = FakeTransport(user, report, report, user, .response(status: 503, body: Data()))
         let clock = FakeClock(date("2026-10-31T18:00:00-07:00"))
         let poller = KeyPoller<CopilotAPI>(store: MemoryKeyStore(["copilot": fakeKey]), transport: transport, now: { clock.now })
         await poller.poll(.timer)
@@ -314,7 +358,7 @@ struct CopilotRequestTests {
         #expect(good != nil)
         clock.now += 6 * 60
         #expect(await poller.poll(.timer))
-        #expect(transport.requests.count == 4)
+        #expect(transport.requests.count == 5)
         #expect(poller.provider.reading == good)
         #expect(poller.provider.problem == nil)
         // Backing off: not due again in 5 minutes.
@@ -336,7 +380,7 @@ struct CopilotRequestTests {
     @Test("the token appears only in Authorization headers: never in a URL, a log line or the reading")
     func tokenStaysPut() async throws {
         var lines: [String] = []
-        let transport = FakeTransport(user, report, quota)
+        let transport = FakeTransport(user, report, report, quota)
         let poller = poller(transport, log: { lines.append($0) })
         poller.setOptions([CopilotAPI.meterOption.id])
         await poller.poll(.timer)
@@ -354,7 +398,7 @@ struct CopilotRequestTests {
         let info = try #require(BuiltInProviders.catalog.first { $0.id == "copilot" })
         #expect(info.name == "GitHub Copilot")
         #expect(info.usesKey)
-        #expect(info.options.map(\.title) == ["Premium requests meter"])
+        #expect(info.options.map(\.title) == ["Quota meter and plan"])
         #expect(info.options.first?.detail == "Uses an undocumented GitHub endpoint")
         #expect(CopilotAPI.hosts == ["api.github.com"])
         let item = try #require(ProviderSettings().menuItems(BuiltInProviders.catalog, detected: ["copilot"]).first { $0.id == "copilot" })

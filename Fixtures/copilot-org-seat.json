@@ -1,5 +1,5 @@
 {
-  "_comment": "Synthetic, not recorded from a real token. The body is what CopilotAPI.fetch builds from its requests to api.github.com: GET /user (login), GET /users/{login}/settings/billing/premium_request/usage?year=&month= (documented: docs.github.com/en/rest/billing/usage) and, with the premium requests meter on, the undocumented GET /copilot_internal/user (shape from CodexBar's CopilotUsageModels tests). A Copilot Business seat from an organization: the user-level billing report has nothing, since the organization is billed.",
+  "_comment": "Synthetic, not recorded from a real token. The body is what CopilotAPI.fetch builds from its requests to api.github.com: GET /user (login), GET /users/{login}/settings/billing/ai_credit/usage and .../premium_request/usage?year=&month= (documented: docs.github.com/en/rest/billing/usage) and, with the quota meter option on, the undocumented GET /copilot_internal/user (shape from CodexBar's Copilot tests). A Copilot Business seat from an organization: the user-level reports are empty, since the organization is billed; copilot_internal gives the credits the seat used.",
   "now": "2026-10-14T10:00:00-07:00",
   "timeZone": "America/Los_Angeles",
   "readings": {
@@ -16,6 +16,17 @@
           "period": {
             "year": 2026,
             "month": 10
+          },
+          "aiCredits": {
+            "status": 200,
+            "body": {
+              "timePeriod": {
+                "year": 2026,
+                "month": 10
+              },
+              "user": "mona-corp",
+              "usageItems": []
+            }
           },
           "billing": {
             "status": 200,
@@ -58,15 +69,17 @@
                   "overage_permitted": false
                 },
                 "premium_interactions": {
-                  "entitlement": 300,
-                  "remaining": 255,
-                  "percent_remaining": 85,
-                  "unlimited": false,
+                  "entitlement": 0,
+                  "remaining": 0,
+                  "percent_remaining": 100,
+                  "unlimited": true,
                   "quota_id": "premium_interactions",
                   "overage_count": 0,
-                  "overage_permitted": false
+                  "overage_permitted": false,
+                  "credits_used": 45
                 }
-              }
+              },
+              "token_based_billing": true
             }
           }
         }

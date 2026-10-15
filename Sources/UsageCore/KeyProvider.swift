@@ -70,6 +70,13 @@ public protocol KeyAPI: Sendable {
     /// turns it on. `fetch` sees the ids of those on in `client.options`.
     /// Defaults to none.
     static var options: [KeyOption] { get }
+    /// The reading with only what the options now on still show: an option
+    /// turned off hides its rows at once, not at the next good answer.
+    /// Defaults to the reading as it is.
+    static func applying(options: Set<String>, to reading: Reading) -> Reading
+    /// Why "Test connection" should fail although the answer was readable
+    /// (the key reads nothing useful); nil when it's fine. Defaults to nil.
+    static func connectionProblem(_ reading: Reading) -> String?
 }
 
 /// A choice a key provider offers in the Providers menu, off by default:
@@ -98,6 +105,8 @@ extension KeyAPI {
     public static func interpret(_ outcome: PollOutcome) -> PollOutcome { outcome }
     public static var hasLimitWindows: Bool { false }
     public static var options: [KeyOption] { [] }
+    public static func applying(options: Set<String>, to reading: Reading) -> Reading { reading }
+    public static func connectionProblem(_ reading: Reading) -> String? { nil }
 
     /// What the Providers menu and detection know about it: a key
     /// provider, shown once its key is saved.
@@ -326,6 +335,11 @@ struct KeyPolling<API: KeyAPI>: Sendable {
         schedule = PollSchedule()
     }
 
+    /// Changes the reading in place, keeping when it came.
+    mutating func adjustReading(_ change: (API.Reading) -> API.Reading) {
+        provider.reading = provider.reading.map(change)
+    }
+
     @discardableResult
     mutating func finish(_ outcome: PollOutcome, at now: Date) -> Finished {
         switch API.interpret(outcome) {
@@ -487,6 +501,8 @@ public final class KeyPoller<API: KeyAPI> {
         generation += 1
         inFlight = false
         polling.restartSchedule()
+        polling.adjustReading { API.applying(options: offered, to: $0) }
+        provider = polling.provider
     }
 
     /// The provider was turned off: forget the key, drop any answer under
@@ -513,8 +529,8 @@ public final class KeyPoller<API: KeyAPI> {
         let outcome = await API.fetch(KeyClient(API.self, key: candidate, transport: transport, userAgent: userAgent, startedAt: now(), options: options))
         switch API.interpret(outcome) {
         case let .response(200, body, _):
-            return API.reading(fromResponse: body, receivedAt: now()) == nil
-                ? .failed(KeyProvider<API>.note(.unreadable)) : .connected
+            guard let reading = API.reading(fromResponse: body, receivedAt: now()) else { return .failed(KeyProvider<API>.note(.unreadable)) }
+            return API.connectionProblem(reading).map(ConnectionTest.failed) ?? .connected
         case let .response(status, _, _) where status == 401 || status == 403:
             return .rejected
         case let .response(status, _, _):

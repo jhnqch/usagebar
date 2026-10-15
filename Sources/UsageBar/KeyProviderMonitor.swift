@@ -77,6 +77,9 @@ final class KeyProviderMonitor<API: KeyAPI>: KeyMonitoring {
     func setOptions(_ ids: Set<String>) {
         guard ids.intersection(API.options.map(\.id)) != poller.options else { return }
         poller.setOptions(ids)
+        // An option turned off hides its rows now.
+        let provider = poller.provider
+        model.update(KeyProvider<API>.self) { $0 = provider }
         refresh()
     }
 
