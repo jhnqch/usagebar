@@ -52,12 +52,13 @@ public enum UsageEngine {
             ))
         }
 
-        // A provider that's off sits out: its cycles neither reset nor
-        // expire until it's back on.
+        // A provider that's off sits out: its cycles are kept, so turning it
+        // back on repeats no alert, and a reset that passes while it's off
+        // is marked announced without an alert.
         let hidden = Set(readings.providers.map(\.id)).subtracting(shown.map(\.id))
         let (asleep, awake) = alertMemory.partitioned { cycle in hidden.contains { cycle.window.hasPrefix("\($0).") } }
         var alerts = LimitAlerts.evaluate(alertWindows, memory: awake, clock: clock)
-        alerts.memory = alerts.memory.adding(asleep)
+        alerts.memory = alerts.memory.adding(asleep.map { $0.silencingReset(at: now) })
         return UsageSnapshot(
             menuBar: MenuBarLabel(parts: parts),
             sections: sections,

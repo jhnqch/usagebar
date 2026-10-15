@@ -222,6 +222,14 @@ struct ProviderSelectionSnapshotTests {
         )
         #expect(afterReset.alerts.isEmpty)
         #expect(afterReset.alertMemory.cycles.map(\.window) == ["claude.fiveHour"])
-        #expect(afterReset.alertMemory.cycles.first?.resetAnnounced == false)
+
+        // Turned back on after the reset: the reset it slept through isn't
+        // announced late, and the new window starts fresh.
+        let backOn = UsageEngine.snapshot(
+            from: Readings([ClaudeProvider(statusLine: claude(fiveHour: 100)), CodexProvider()]),
+            now: date("2026-10-10T18:00:00-07:00"), timeZone: losAngeles, alertMemory: afterReset.alertMemory,
+            selection: both
+        )
+        #expect(backOn.alerts.isEmpty)
     }
 }

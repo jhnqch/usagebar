@@ -213,3 +213,13 @@ extension AlertMemory.Cycle {
         abs(reading.resetsAt.timeIntervalSince(resetsAt)) <= UsageEngine.sameWindowTolerance
     }
 }
+
+extension AlertMemory.Cycle {
+    /// The cycle with a reset that has passed by `now` marked announced, so
+    /// it's never announced: for a provider that was off at the time.
+    func silencingReset(at now: Date) -> AlertMemory.Cycle {
+        var copy = self
+        if maxed, resetsAt <= now { copy.resetAnnounced = true }
+        return copy
+    }
+}
