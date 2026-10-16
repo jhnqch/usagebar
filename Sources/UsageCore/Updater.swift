@@ -11,12 +11,16 @@ public struct UpdateSettings: Equatable, Sendable {
     public internal(set) var lastCheck: Date?
     /// The release that check found, so a relaunch still offers it.
     public internal(set) var latest: Release?
+    /// The repo `lastCheck` and `latest` are about, `owner/name`.
+    public internal(set) var checkedRepository: String?
 
-    public init(checkAutomatically: Bool = true, installAutomatically: Bool = false, lastCheck: Date? = nil, latest: Release? = nil) {
+    public init(checkAutomatically: Bool = true, installAutomatically: Bool = false, lastCheck: Date? = nil, latest: Release? = nil,
+                checkedRepository: String? = nil) {
         self.checkAutomatically = checkAutomatically
         self.installAutomatically = installAutomatically
         self.lastCheck = lastCheck
         self.latest = latest
+        self.checkedRepository = checkedRepository
     }
 
     static let checkKey = "updates.checkAutomatically"
@@ -24,6 +28,7 @@ public struct UpdateSettings: Equatable, Sendable {
     static let lastCheckKey = "updates.lastCheck"
     static let latestTagKey = "updates.latestTag"
     static let latestPageKey = "updates.latestPage"
+    static let checkedRepositoryKey = "updates.checkedRepository"
 
     /// The settings saved in `store`; a missing or mistyped value reads as
     /// the default.
@@ -34,7 +39,8 @@ public struct UpdateSettings: Equatable, Sendable {
             lastCheck: store.object(forKey: Self.lastCheckKey) as? Date,
             latest: (store.object(forKey: Self.latestTagKey) as? String).flatMap { tag in
                 Release(tag: tag, page: store.object(forKey: Self.latestPageKey) as? String)
-            }
+            },
+            checkedRepository: store.object(forKey: Self.checkedRepositoryKey) as? String
         )
     }
 
@@ -44,6 +50,7 @@ public struct UpdateSettings: Equatable, Sendable {
         store.set(lastCheck, forKey: Self.lastCheckKey)
         store.set(latest?.tag, forKey: Self.latestTagKey)
         store.set(latest?.page?.absoluteString, forKey: Self.latestPageKey)
+        store.set(checkedRepository, forKey: Self.checkedRepositoryKey)
     }
 }
 
@@ -137,10 +144,17 @@ public struct Updater: Equatable, Sendable {
         case failed(Release, UpdateFailure)
     }
 
+    /// A saved check about another repo (a fork's build replacing an
+    /// upstream one) is forgotten.
     public init(build: BuildInfo, settings: UpdateSettings = UpdateSettings(), sourceExists: Bool = true) {
         self.build = build
         self.settings = settings
         self.sourceExists = sourceExists
+        if settings.checkedRepository != build.repository?.description {
+            self.settings.lastCheck = nil
+            self.settings.latest = nil
+            self.settings.checkedRepository = nil
+        }
     }
 
     // MARK: Checking
@@ -175,27 +189,24 @@ public struct Updater: Equatable, Sendable {
     public mutating func finishCheck(_ result: ReleaseCheck, at now: Date) -> UpdateAction? {
         isChecking = false
         switch result {
-        case let .release(release):
-            settings.latest = release
+        case .release, .noRelease:
+            if case let .release(release) = result { settings.latest = release } else { settings.latest = nil }
             checkError = nil
-            settings.lastCheck = now
-            lastAttempt = nil
-        case .noRelease:
-            settings.latest = nil
-            checkError = nil
-            settings.lastCheck = now
-            lastAttempt = nil
+            // A failed install gives way to a newer release, or to none
+            // when its release was withdrawn.
+            if case let .failed(release, _) = phase, available?.version != release.version {
+                phase = .idle
+            }
         case let .failed(message):
             checkError = message
-            settings.lastCheck = now
-            lastAttempt = nil
         case .unreachable:
             checkError = "GitHub didn't answer"
+            return nil
         }
-        // A failure for an older release gives way to the newer one.
-        if case let .failed(release, _) = phase, let available, available.version != release.version {
-            phase = .idle
-        }
+        // GitHub answered, about this build's repo.
+        settings.lastCheck = now
+        settings.checkedRepository = build.repository?.description
+        lastAttempt = nil
         // Installing automatically rides on checking automatically, as the menu shows.
         guard settings.installAutomatically, settings.checkAutomatically, canInstall, phase == .idle, let available, available.version != failedVersion else { return nil }
         return .install

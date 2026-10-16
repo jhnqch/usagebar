@@ -69,6 +69,20 @@ struct UpdateScheduleTests {
         #expect(Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store)).banner == nil)
     }
 
+    @Test("a build from another repo forgets the old repo's check and release")
+    func otherRepository() {
+        let store = MemoryStore()
+        var upstream = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        _ = upstream.checked(found("v1.1.0"))
+        upstream.settings.save(to: store)
+
+        let forkBuild = BuildInfo(version: BuildVersion(describe: "v1.0.0"), repository: GitHubRepository("someone/fork"), sourcePath: "/src/fork")
+        let fork = Updater(build: forkBuild, settings: UpdateSettings(loadingFrom: store))
+        #expect(fork.banner == nil)
+        #expect(fork.isCheckDue(at: now + hour))
+        #expect(Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store)).banner?.title == "Update to v1.1.0")
+    }
+
     @Test("a saved release that no longer reads as one is dropped")
     func latestCorrupt() {
         let store = MemoryStore()
@@ -236,6 +250,23 @@ struct UpdateBannerTests {
 
 @Suite("Automatic install")
 struct AutomaticInstallTests {
+    @Test("a failed release that's withdrawn stops being offered")
+    func withdrawn() {
+        var updater = Updater(build: fromCheckout)
+        _ = updater.checked(found("v1.1.0"))
+        _ = updater.startInstall()
+        updater.fail(UpdateFailure(message: "The build failed.", logPath: nil))
+        _ = updater.checked(.noRelease, at: now + day)
+        #expect(updater.banner == nil)
+
+        var older = Updater(build: fromCheckout)
+        _ = older.checked(found("v1.1.0"))
+        _ = older.startInstall()
+        older.fail(UpdateFailure(message: "The build failed.", logPath: nil))
+        _ = older.checked(found("v1.0.0"), at: now + day)
+        #expect(older.banner == nil)
+    }
+
     @Test("with Install automatically on, a newer release installs itself")
     func installs() {
         var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
