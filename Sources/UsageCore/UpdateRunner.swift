@@ -145,9 +145,10 @@ public struct UpdateRunner: Sendable {
 }
 
 /// Installs a built app and relaunches it, from a helper that outlives the
-/// app: it waits for the running app's process to exit, moves the
-/// installed bundle aside, moves the new one into its place (putting the
-/// old one back if that fails), and opens whichever is there.
+/// app: it waits for the running app's process to exit, copies the new
+/// bundle beside the installed one, renames the installed one aside and the
+/// copy into its place (putting the old one back if that fails), and opens
+/// whichever is there. A failed copy leaves the installed app as it was.
 public enum Relaunch {
     /// The helper: `/bin/sh` with a fixed script and the paths as
     /// arguments, never spliced into the script.
@@ -158,19 +159,23 @@ public enum Relaunch {
     static let script = """
     pid="$1"; new="$2"; app="$3"; opener="$4"
     while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
-    old="$app.previous"
+    next="$app.new"; old="$app.previous"
+    rm -rf "$next" "$old"
     status=1
-    if [ -d "$new" ]; then
-      rm -rf "$old"
+    # Copy beside the installed app first (staging may be on another
+    # volume), so the swap itself is two renames on one volume.
+    if [ -d "$new" ] && ditto "$new" "$next"; then
       if [ ! -e "$app" ] || mv "$app" "$old"; then
-        if mv "$new" "$app"; then
-          rm -rf "$old"
+        if mv "$next" "$app"; then
           status=0
         elif [ -e "$old" ]; then
+          rm -rf "$app"
           mv "$old" "$app"
         fi
       fi
     fi
+    rm -rf "$next" "$old"
+    [ $status = 0 ] && rm -rf "$new"
     "$opener" "$app"
     exit $status
     """

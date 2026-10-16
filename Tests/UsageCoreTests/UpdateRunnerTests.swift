@@ -352,6 +352,24 @@ struct RelaunchTests {
         #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + "\n")
     }
 
+    @Test("a leftover from an earlier swap doesn't get in the way")
+    func leftovers() async throws {
+        let dir = try TempDirectory()
+        defer { dir.remove() }
+        let app = dir.file("UsageBar.app"), staged = dir.file("staging/UsageBar.app")
+        try makeApp(app, "old")
+        try makeApp(staged, "new")
+        try makeApp(app + ".new", "half-copied")
+        try makeApp(app + ".previous", "older")
+        try dir.write("open", "#!/bin/sh\nexit 0\n", executable: true)
+        let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, opener: dir.file("open"))
+        let result = shell(command.executable, command.arguments, in: command.directory)
+        #expect(result.status == 0, "\(result.output)")
+        #expect(build(app) == "new")
+        #expect(!FileManager.default.fileExists(atPath: app + ".new"))
+        #expect(!FileManager.default.fileExists(atPath: app + ".previous"))
+    }
+
     @Test("without a staged app the old one stays and reopens")
     func keepsOld() async throws {
         let dir = try TempDirectory()
