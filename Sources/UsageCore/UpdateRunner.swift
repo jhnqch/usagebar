@@ -70,8 +70,9 @@ public struct UpdateRunner: Sendable {
             log("\n\(message)\n")
             return UpdateFailure(message: message, logPath: nil)
         }
-        func git(_ arguments: String...) async -> CommandResult {
-            await run(Command("/usr/bin/git", arguments, in: sourcePath, environment: ["GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"]), log: log)
+        func git(_ arguments: String..., logsOutput: Bool = true) async -> CommandResult {
+            await run(Command("/usr/bin/git", arguments, in: sourcePath, environment: ["GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"]),
+                      logsOutput: logsOutput, log: log)
         }
 
         log("Updating to \(release.tag) in \(sourcePath)\n")
@@ -80,10 +81,12 @@ public struct UpdateRunner: Sendable {
         guard topLevel.status == 0, topLevel.output.trimmingCharacters(in: .whitespacesAndNewlines) == sourcePath else {
             return fail("The source folder is missing or isn't a git checkout.")
         }
-        let origin = await git("config", "--get", "remote.origin.url")
+        // The URL may hold credentials: only the owner/name parsed from it is logged.
+        let origin = await git("config", "--get", "remote.origin.url", logsOutput: false)
         guard origin.status == 0, let originRepository = GitHubRepository(remoteURL: origin.output) else {
             return fail("The source folder's origin isn't a GitHub repository.")
         }
+        log("origin: \(originRepository)\n")
         guard originRepository.description.lowercased() == repository.description.lowercased() else {
             return fail("The source folder's origin is \(originRepository), but this app was built from \(repository).")
         }
@@ -97,7 +100,7 @@ public struct UpdateRunner: Sendable {
             guard name == "main" else { return fail("The source folder is on branch \(name), not main or a release tag.") }
         } else {
             let tag = await git("describe", "--tags", "--exact-match", "HEAD")
-            guard tag.status == 0, SemanticVersion(tag.output.trimmingCharacters(in: .whitespacesAndNewlines)) != nil else {
+            guard tag.status == 0, Release(tag: tag.output.trimmingCharacters(in: .whitespacesAndNewlines), page: nil) != nil else {
                 return fail("The source folder isn't on main or a release tag.")
             }
         }
@@ -108,33 +111,34 @@ public struct UpdateRunner: Sendable {
         }
         // The tag came from a parsed version, so it can't pass for an option.
         let ref = "refs/tags/\(release.tag)"
-        guard SemanticVersion(release.tag) != nil, await git("rev-parse", "--verify", "--quiet", "\(ref)^{commit}").status == 0 else {
+        guard Release(tag: release.tag, page: nil) != nil, await git("rev-parse", "--verify", "--quiet", "\(ref)^{commit}").status == 0 else {
             return fail("origin has no tag \(release.tag).")
         }
 
         await progress(.checkingOut)
-        guard await git("checkout", "--quiet", "--detach", ref).status == 0 else {
-            return fail("Couldn't check out \(release.tag).")
+        // Git would otherwise overwrite an ignored local file the release tracks.
+        guard await git("checkout", "--quiet", "--no-overwrite-ignore", "--detach", ref).status == 0 else {
+            return fail("Couldn't check out \(release.tag). The log says why.")
         }
 
         await progress(.building)
         let build = Command("/bin/bash", ["scripts/build.sh"], in: sourcePath, environment: ["USAGEBAR_APP": stagingApp])
-        guard await run(build, log: log).status == 0 else {
+        guard await run(build, logsOutput: true, log: log).status == 0 else {
             return fail("The build failed.")
         }
         let built = Command("/bin/test", ["-x", stagingApp + "/Contents/MacOS/UsageBar"], in: sourcePath)
-        guard await run(built, log: log).status == 0 else {
+        guard await run(built, logsOutput: true, log: log).status == 0 else {
             return fail("The build didn't produce an app.")
         }
         log("\nBuilt \(release.tag) at \(stagingApp)\n")
         return nil
     }
 
-    private func run(_ command: Command, log: @Sendable (String) -> Void) async -> CommandResult {
+    private func run(_ command: Command, logsOutput: Bool, log: @Sendable (String) -> Void) async -> CommandResult {
         let name = (command.executable as NSString).lastPathComponent
         log("\n$ \(([name] + command.arguments).joined(separator: " "))\n")
         let result = await runner.run(command)
-        if !result.output.isEmpty { log(result.output.hasSuffix("\n") ? result.output : result.output + "\n") }
+        if logsOutput, !result.output.isEmpty { log(result.output.hasSuffix("\n") ? result.output : result.output + "\n") }
         if result.status != 0 { log("(exit \(result.status))\n") }
         return result
     }

@@ -54,6 +54,9 @@ private struct SourceCheckout {
         commit(work, "broken", tag: "v1.2.0")
         try write(work, "scripts/build.sh", Self.goodBuild)
         try write(work, "README", "1.1\n")
+        // v1.1.0 tracks a file matching .gitignore, where a user may already keep an ignored one.
+        try write(work, "defaults.local", "shipped defaults\n")
+        git("add", "-f", "defaults.local", in: work)
         commit(work, "v1.1.0", tag: nil)
         git("clone", "-q", "--bare", work, remote, in: root.path)
         git("clone", "-q", remote, source, in: root.path)
@@ -105,6 +108,32 @@ struct UpdateRunnerGitTests {
         #expect(try String(contentsOfFile: checkout.source + "/settings.local", encoding: .utf8) == "private")
         #expect(recorder.log.contains("$ git fetch --tags origin"))
         #expect(recorder.log.contains("building v1.1.0"))
+    }
+
+    @Test("an ignored local file the release would overwrite stops the checkout and is kept")
+    func ignoredFileKept() async throws {
+        let checkout = try SourceCheckout()
+        defer { checkout.root.remove() }
+        try "mine".write(toFile: checkout.source + "/defaults.local", atomically: true, encoding: .utf8)
+        let failure = await Recorder().run(checkout.runner(to: "v1.1.0"))
+        #expect(failure?.message == "Couldn't check out v1.1.0. The log says why.")
+        #expect(checkout.head == "v1.0.0")
+        #expect(try String(contentsOfFile: checkout.source + "/defaults.local", encoding: .utf8) == "mine")
+    }
+
+    @Test("credentials in origin's URL never reach the log")
+    func credentialsNotLogged() async throws {
+        let checkout = try SourceCheckout()
+        defer { checkout.root.remove() }
+        let url = "https://someone:not-a-real-token@github.com/acme/usagebar.git"
+        git("remote", "set-url", "origin", url, in: checkout.source)
+        git("config", "url.\(checkout.remote).insteadOf", url, in: checkout.source)
+        let recorder = Recorder()
+        let failure = await recorder.run(checkout.runner(to: "v1.1.0"))
+        #expect(failure == nil)
+        #expect(!recorder.log.contains("not-a-real-token"))
+        #expect(!recorder.log.contains("someone"))
+        #expect(recorder.log.contains("acme/usagebar"))
     }
 
     @Test("a checkout on main updates too")
@@ -248,7 +277,7 @@ struct UpdateRunnerCommandTests {
             "/usr/bin/git symbolic-ref --quiet --short HEAD",
             "/usr/bin/git fetch --tags origin",
             "/usr/bin/git rev-parse --verify --quiet refs/tags/v1.1.0^{commit}",
-            "/usr/bin/git checkout --quiet --detach refs/tags/v1.1.0",
+            "/usr/bin/git checkout --quiet --no-overwrite-ignore --detach refs/tags/v1.1.0",
             "/bin/bash scripts/build.sh",
             "/bin/test -x /support/Update/UsageBar.app/Contents/MacOS/UsageBar",
         ])
