@@ -13,14 +13,17 @@ public struct UpdateSettings: Equatable, Sendable {
     public internal(set) var latest: Release?
     /// The repo `lastCheck` and `latest` are about, `owner/name`.
     public internal(set) var checkedRepository: String?
+    /// A release whose install failed: not installed automatically again.
+    public internal(set) var failedTag: String?
 
     public init(checkAutomatically: Bool = true, installAutomatically: Bool = false, lastCheck: Date? = nil, latest: Release? = nil,
-                checkedRepository: String? = nil) {
+                checkedRepository: String? = nil, failedTag: String? = nil) {
         self.checkAutomatically = checkAutomatically
         self.installAutomatically = installAutomatically
         self.lastCheck = lastCheck
         self.latest = latest
         self.checkedRepository = checkedRepository
+        self.failedTag = failedTag
     }
 
     static let checkKey = "updates.checkAutomatically"
@@ -29,6 +32,7 @@ public struct UpdateSettings: Equatable, Sendable {
     static let latestTagKey = "updates.latestTag"
     static let latestPageKey = "updates.latestPage"
     static let checkedRepositoryKey = "updates.checkedRepository"
+    static let failedTagKey = "updates.failedTag"
 
     /// The settings saved in `store`; a missing or mistyped value reads as
     /// the default.
@@ -40,7 +44,8 @@ public struct UpdateSettings: Equatable, Sendable {
             latest: (store.object(forKey: Self.latestTagKey) as? String).flatMap { tag in
                 Release(tag: tag, page: store.object(forKey: Self.latestPageKey) as? String)
             },
-            checkedRepository: store.object(forKey: Self.checkedRepositoryKey) as? String
+            checkedRepository: store.object(forKey: Self.checkedRepositoryKey) as? String,
+            failedTag: store.object(forKey: Self.failedTagKey) as? String
         )
     }
 
@@ -51,6 +56,7 @@ public struct UpdateSettings: Equatable, Sendable {
         store.set(latest?.tag, forKey: Self.latestTagKey)
         store.set(latest?.page?.absoluteString, forKey: Self.latestPageKey)
         store.set(checkedRepository, forKey: Self.checkedRepositoryKey)
+        store.set(failedTag, forKey: Self.failedTagKey)
     }
 }
 
@@ -135,8 +141,6 @@ public struct Updater: Equatable, Sendable {
     private var isChecking = false
     private var lastAttempt: Date?
     private var checkError: String?
-    /// A version whose install failed: not installed automatically again.
-    private var failedVersion: SemanticVersion?
 
     private enum Phase: Equatable, Sendable {
         case idle
@@ -154,6 +158,7 @@ public struct Updater: Equatable, Sendable {
             self.settings.lastCheck = nil
             self.settings.latest = nil
             self.settings.checkedRepository = nil
+            self.settings.failedTag = nil
         }
     }
 
@@ -208,7 +213,10 @@ public struct Updater: Equatable, Sendable {
         settings.checkedRepository = build.repository?.description
         lastAttempt = nil
         // Installing automatically rides on checking automatically, as the menu shows.
-        guard settings.installAutomatically, settings.checkAutomatically, canInstall, phase == .idle, let available, available.version != failedVersion else { return nil }
+        // Only a release this check found, and not one that failed before.
+        guard case .release = result, settings.installAutomatically, settings.checkAutomatically, canInstall, phase == .idle,
+              let available, available.tag != settings.failedTag
+        else { return nil }
         return .install
     }
 
@@ -245,7 +253,7 @@ public struct Updater: Equatable, Sendable {
     public mutating func fail(_ failure: UpdateFailure) {
         guard case let .installing(release, _) = phase else { return }
         phase = .failed(release, failure)
-        failedVersion = release.version
+        settings.failedTag = release.tag
     }
 
     // MARK: What it shows

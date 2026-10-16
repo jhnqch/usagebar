@@ -104,6 +104,7 @@ final class UpdateController {
                 failure.logPath = logPath
                 log.error("update failed: \(failure.message, privacy: .public)")
                 updater.fail(failure)
+                updater.settings.save(to: defaults)
                 return
             }
             updater.advance(.relaunching)
@@ -128,6 +129,7 @@ final class UpdateController {
         } catch {
             updater.fail(UpdateFailure(message: "Couldn't start the relaunch: \(error.localizedDescription)",
                                        logPath: (Self.logURL.path as NSString).abbreviatingWithTildeInPath))
+            updater.settings.save(to: defaults)
             return
         }
         NSApp.terminate(nil)

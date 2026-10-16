@@ -267,6 +267,32 @@ struct AutomaticInstallTests {
         #expect(older.banner == nil)
     }
 
+    @Test("only a release the current check found installs, not one saved from before")
+    func onlyFromThisCheck() {
+        var updater = Updater(build: fromCheckout)
+        _ = updater.checked(found("v1.1.0"))
+        updater.settings.installAutomatically = true
+        let action = updater.checked(.failed("GitHub answered 500"), at: now + day)
+        #expect(action == nil)
+    }
+
+    @Test("a release that failed to install isn't retried automatically after a relaunch either")
+    func noRetryAfterRelaunch() {
+        let store = MemoryStore()
+        var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
+        _ = updater.checked(found("v1.1.0"))
+        _ = updater.startInstall()
+        updater.fail(UpdateFailure(message: "The build failed.", logPath: nil))
+        updater.settings.save(to: store)
+
+        var relaunched = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        let same = relaunched.checked(found("v1.1.0"), at: now + day)
+        #expect(same == nil)
+        #expect(relaunched.banner?.style == .available)  // still one click away
+        let newer = relaunched.checked(found("v1.2.0"), at: now + 2 * day)
+        #expect(newer == .install)
+    }
+
     @Test("with Install automatically on, a newer release installs itself")
     func installs() {
         var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
