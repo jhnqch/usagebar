@@ -5,7 +5,7 @@ A macOS menu bar app that shows how much of your AI subscription limits and API 
 - **Claude** and **Codex**: the 5-hour and weekly limit windows, with a pace prediction for each, plus a chart of this week's usage by model in API-equivalent dollars.
 - **OpenRouter, DeepSeek, Moonshot (Kimi), z.ai (GLM Coding Plan) and GitHub Copilot**: credit limits, budgets, balances and quota windows, read with an API key you paste in.
 
-The menu bar shows the windows you choose, e.g. `✳ 61% · ⌘ 13%`. The number turns orange from 90% and red at 100%, and a maxed window shows the time until it resets. macOS notifications tell you when a window crosses 90% and when a maxed window resets.
+The menu bar shows the windows you choose, e.g. `✳ 61% · ⌘ 13%`. The number turns orange at your warning threshold (90% unless you change it) and red at 100%, and a maxed window shows the time until it resets. macOS notifications tell you when a window crosses the threshold, when a window first seen at 100% has reached its limit, and when a maxed window resets. The **Alerts** section of the Providers menu sets the threshold (50, 75, 80, 85, 90 or 95%) and turns "Limit reached alerts" and "Limit reset alerts" on or off, and each provider's own **Alerts** switch silences it without hiding it. Each window alerts at most once per reset cycle, even if you change the threshold midway.
 
 | Claude and Codex | Key providers |
 |---|---|
@@ -113,7 +113,7 @@ UsageBar runs entirely on your Mac. It has no server, analytics or telemetry, an
 - **Claude Code's login is read-only.** UsageBar reads the access token from Claude Code's Keychain item, keeps it in memory, and sends it only in the `Authorization` header of requests to `api.anthropic.com`. It never writes, logs, forwards or refreshes it. Refresh tokens are single-use, so refreshing one would sign you out of Claude Code; UsageBar leaves that to Claude Code.
 - **Codex's login stays inside Codex.** UsageBar runs your installed `codex app-server`, which uses its own login. UsageBar never reads Codex's credentials.
 - **API keys** are stored in UsageBar's own Keychain items (service `io.github.jhnqch.usagebar.api-key`, one per provider). A key is sent only over https, only in the `Authorization` header, and only to its provider's host; any other host or a redirect is refused. Keys are never logged, written to disk or put in settings.
-- **Settings** (which providers are on and in the menu bar) live in `UserDefaults` under the bundle id `io.github.jhnqch.usagebar`. The support directory `~/Library/Application Support/UsageBar` holds the status line's saved limits and which alerts have already fired.
+- **Settings** (which providers are on and in the menu bar, and the Alerts settings) live in `UserDefaults` under the bundle id `io.github.jhnqch.usagebar`. The support directory `~/Library/Application Support/UsageBar` holds the status line's saved limits and which alerts have already fired.
 - **Local logs** (Claude Code transcripts and Codex session logs) are only read, to draw the cost charts.
 
 ## Known risks

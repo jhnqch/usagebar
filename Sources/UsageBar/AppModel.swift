@@ -21,6 +21,8 @@ final class AppModel {
     /// The Providers menu's rows.
     private(set) var providerItems: [ProviderMenuItem] = []
     private(set) var selection: ProviderSelection
+    /// The Providers menu's Alerts settings.
+    private(set) var alertSettings: AlertSettings
     @ObservationIgnored private var readings: Readings
     @ObservationIgnored private var alertMemory: AlertMemory
     @ObservationIgnored private var settings: ProviderSettings
@@ -36,11 +38,44 @@ final class AppModel {
         let settings = ProviderSettings(loadingFrom: environment.defaults, catalog: BuiltInProviders.catalog)
         let detected = environment.detect()
         let selection = settings.selection(BuiltInProviders.catalog, detected: detected)
+        let alertSettings = AlertSettings(loadingFrom: environment.defaults, catalog: BuiltInProviders.catalog)
         self.settings = settings
         self.detected = detected
         self.selection = selection
-        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory, selection: selection)
-        providerItems = settings.menuItems(BuiltInProviders.catalog, detected: detected)
+        self.alertSettings = alertSettings
+        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory,
+                                        selection: selection, alertSettings: alertSettings)
+        providerItems = settings.menuItems(BuiltInProviders.catalog, detected: detected, alerts: alertSettings)
+    }
+
+    /// Picks the warning threshold from the Providers menu's Alerts section.
+    func setAlertThreshold(_ percent: Int) {
+        alertSettings.setThreshold(percent)
+        alertSettingsChanged()
+    }
+
+    /// Turns "limit reached" alerts on or off.
+    func setLimitReachedAlerts(_ isOn: Bool) {
+        alertSettings.limitReached = isOn
+        alertSettingsChanged()
+    }
+
+    /// Turns "limit reset" alerts on or off.
+    func setLimitResetAlerts(_ isOn: Bool) {
+        alertSettings.limitReset = isOn
+        alertSettingsChanged()
+    }
+
+    /// Turns a provider's alerts on or off; it stays shown either way.
+    func setAlerts(_ isOn: Bool, for id: String) {
+        alertSettings.setAlerts(isOn, for: id)
+        alertSettingsChanged()
+    }
+
+    private func alertSettingsChanged() {
+        alertSettings.save(to: environment.defaults)
+        providerItems = settings.menuItems(BuiltInProviders.catalog, detected: detected, alerts: alertSettings)
+        refresh()
     }
 
     /// Turns a provider on or off from the Providers menu.
@@ -80,7 +115,7 @@ final class AppModel {
         if save {
             settings.save(to: environment.defaults)
         }
-        providerItems = settings.menuItems(BuiltInProviders.catalog, detected: detected)
+        providerItems = settings.menuItems(BuiltInProviders.catalog, detected: detected, alerts: alertSettings)
         let updated = settings.selection(BuiltInProviders.catalog, detected: detected)
         guard updated != selection else { return }
         selection = updated
@@ -100,7 +135,8 @@ final class AppModel {
 
     /// Recomputes the snapshot against the current clock, and posts any alerts.
     func refresh() {
-        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory, selection: selection)
+        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory,
+                                        selection: selection, alertSettings: alertSettings)
         if snapshot.alertMemory != alertMemory {
             alertMemory = snapshot.alertMemory
             onAlertMemoryChange?(alertMemory)

@@ -9,14 +9,20 @@ public enum UsageEngine {
     /// `selection` picks the providers shown and those with a menu bar part;
     /// nil shows every provider with a part. A provider that's off neither
     /// shows nor alerts, and what it alerted before is kept as it was.
+    ///
+    /// `alertSettings` sets the warning threshold (meter and menu bar
+    /// colours, and when a window alerts), which alert kinds fire and which
+    /// providers alert. A provider with alerts off still shows.
     public static func snapshot(
         from readings: Readings,
         now: Date,
         timeZone: TimeZone,
         alertMemory: AlertMemory = AlertMemory(),
-        selection: ProviderSelection? = nil
+        selection: ProviderSelection? = nil,
+        alertSettings: AlertSettings = AlertSettings()
     ) -> UsageSnapshot {
         let clock = Clock(now: now, timeZone: timeZone)
+        let warningAt = alertSettings.warningAt
         var sections: [ProviderSection] = []
         var parts: [MenuBarLabel.Part] = []
         var alertWindows: [LimitAlerts.Window] = []
@@ -25,12 +31,12 @@ public enum UsageEngine {
         for provider in shown {
             let report = provider.report(clock: clock)
             let windows = report.windows.map { $0.current(at: now) }
-            let meters = windows.map { meter($0, clock: clock) }
+            let meters = windows.map { meter($0, warningAt: warningAt, clock: clock) }
             var nextMeter = meters.makeIterator()
             let rows: [ProviderSection.Row] = report.rows.map { row in
                 switch row {
                 case .window: .meter(nextMeter.next()!)
-                case let .credit(credit): .credit(creditMeter(credit, clock: clock))
+                case let .credit(credit): .credit(creditMeter(credit, warningAt: warningAt, clock: clock))
                 case let .value(value):
                     .value(ValueLine(id: value.id, label: value.label, valueText: value.value?.text ?? value.text ?? "—",
                                      detailText: value.value == nil && value.text == nil ? nil : value.detail))
@@ -39,14 +45,14 @@ public enum UsageEngine {
             alertWindows += zip(windows, meters).map { window, meter in
                 LimitAlerts.Window(
                     id: window.id, names: .init(near: window.nearAlertName, limit: window.alertName),
-                    reading: window.reading, prediction: meter.prediction
+                    reading: window.reading, prediction: meter.prediction, muted: !alertSettings.alerts(for: provider.id)
                 )
             }
             let labelWindows = windows.filter(\.inMenuBar)
             if !labelWindows.isEmpty, selection?.menuBar.contains(provider.id) ?? true {
                 parts.append(MenuBarLabel.Part(
                     id: provider.id, name: provider.name, symbol: provider.symbol,
-                    value: labelPart(labelWindows.compactMap(\.reading), clock: clock)
+                    value: labelPart(labelWindows.compactMap(\.reading), warningAt: warningAt, clock: clock)
                 ))
             }
             sections.append(ProviderSection(
@@ -64,10 +70,11 @@ public enum UsageEngine {
 
         // A provider that's off sits out: its cycles are kept, so turning it
         // back on repeats no alert, and a reset that passes while it's off
-        // is marked announced without an alert.
+        // is marked announced without an alert. One with alerts off is
+        // evaluated muted, so its cycles' reset times stay current.
         let hidden = Set(readings.providers.map(\.id)).subtracting(shown.map(\.id))
         let (asleep, awake) = alertMemory.partitioned { cycle in hidden.contains { cycle.window.hasPrefix("\($0).") } }
-        var alerts = LimitAlerts.evaluate(alertWindows, memory: awake, clock: clock)
+        var alerts = LimitAlerts.evaluate(alertWindows, memory: awake, settings: alertSettings, clock: clock)
         alerts.memory = alerts.memory.adding(asleep.map { $0.silencingReset(at: now) })
         return UsageSnapshot(
             menuBar: MenuBarLabel(parts: parts),
@@ -93,26 +100,26 @@ public enum UsageEngine {
 
     /// The highest window's percent, or, while any window is maxed, the time
     /// until the last maxed window resets (when work can resume).
-    private static func labelPart(_ readings: [LimitReading], clock: Clock) -> LabelPart {
+    private static func labelPart(_ readings: [LimitReading], warningAt: Double, clock: Clock) -> LabelPart {
         guard let highest = readings.map(\.usedPercent).max() else { return LabelPart(text: "—", level: .normal) }
         let maxedResets = readings.filter { Level(percent: $0.usedPercent) == .maxed }.map(\.resetsAt)
         if let resumeAt = maxedResets.max() {
             return LabelPart(text: clock.countdown(to: resumeAt), level: .maxed)
         }
-        return LabelPart(text: percentText(highest), level: Level(percent: highest))
+        return LabelPart(text: percentText(highest), level: Level(percent: highest, warningAt: warningAt))
     }
 
-    private static func meter(_ window: LimitWindow, clock: Clock) -> Meter {
+    private static func meter(_ window: LimitWindow, warningAt: Double, clock: Clock) -> Meter {
         guard let reading = window.reading else {
             if let percent = window.percentWithoutReset {
                 return Meter(id: window.id, label: window.label, percentText: percentText(percent),
-                             fraction: min(max(percent, 0), 100) / 100, level: Level(percent: percent), resetText: nil,
+                             fraction: min(max(percent, 0), 100) / 100, level: Level(percent: percent, warningAt: warningAt), resetText: nil,
                              usageText: window.usageText)
             }
             return Meter(id: window.id, label: window.label, percentText: "—", fraction: 0, level: .normal, resetText: nil,
                          usageText: window.usageText)
         }
-        let level = Level(percent: reading.usedPercent)
+        let level = Level(percent: reading.usedPercent, warningAt: warningAt)
         let pace = Pace(reading: reading, minutes: window.minutes, clock: clock)
         return Meter(
             id: window.id,
@@ -134,7 +141,7 @@ public enum UsageEngine {
     /// Once its reset has passed (the Mac slept through it, or the poll
     /// since failed) the old balance no longer holds: it reads "—" and says
     /// when it reset, until a new reading comes.
-    private static func creditMeter(_ credit: CreditRow, clock: Clock) -> CreditMeter {
+    private static func creditMeter(_ credit: CreditRow, warningAt: Double, clock: Clock) -> CreditMeter {
         let resetText = credit.resetsAt.map { clock.resetText($0) }
         if let resetsAt = credit.resetsAt, resetsAt <= clock.now {
             return CreditMeter(id: credit.id, label: credit.label, valueText: "—", fraction: 0, level: .normal, resetText: resetText)
@@ -149,7 +156,7 @@ public enum UsageEngine {
         let used = min(max(1 - left.value / total.value, 0), 1)
         return CreditMeter(
             id: credit.id, label: credit.label, valueText: "\(left.text) left of \(total.text)", fraction: used,
-            level: left.value <= 0 ? .maxed : Level(percent: min(used * 100, 99.99)), resetText: resetText
+            level: left.value <= 0 ? .maxed : Level(percent: min(used * 100, 99.99), warningAt: warningAt), resetText: resetText
         )
     }
 

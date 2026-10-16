@@ -118,8 +118,9 @@ public struct ProviderSettings: Equatable, Sendable {
         return ProviderSelection(enabled: on.map(\.id), menuBar: menuBar)
     }
 
-    /// The Providers menu's rows, one per provider in `catalog` order.
-    public func menuItems(_ catalog: [ProviderInfo], detected: Set<String>) -> [ProviderMenuItem] {
+    /// The Providers menu's rows, one per provider in `catalog` order, with
+    /// each provider's "Alerts" switch from `alerts`.
+    public func menuItems(_ catalog: [ProviderInfo], detected: Set<String>, alerts: AlertSettings = AlertSettings()) -> [ProviderMenuItem] {
         let selection = selection(catalog, detected: detected)
         return catalog.map { info in
             ProviderMenuItem(
@@ -129,6 +130,7 @@ public struct ProviderSettings: Equatable, Sendable {
                 inMenuBar: selection.menuBar.contains(info.id),
                 detail: detected.contains(info.id) ? nil : info.usesKey ? "No API key saved" : "Not found on this Mac",
                 key: info.usesKey ? (detected.contains(info.id) ? .saved : .missing) : nil,
+                alerts: alerts.alerts(for: info.id),
                 options: info.options.map { option in
                     ProviderMenuItem.Option(id: option.id, title: option.title, detail: option.detail,
                                             isOn: options[info.id]?[option.id] ?? false)
@@ -198,6 +200,8 @@ public struct ProviderMenuItem: Equatable, Sendable, Identifiable {
     public var detail: String?
     /// For a key provider, whether its key is saved; nil for the others.
     public var key: KeyStatus? = nil
+    /// Whether its alerts are on. Off silences it without hiding it.
+    public var alerts: Bool = true
     /// The provider's options, with whether each is on.
     public var options: [Option] = []
 
