@@ -140,6 +140,21 @@ struct AlertKindTests {
         #expect(run(codex: codex(weekly: 94), at: now + 120) == [])
     }
 
+    @Test("a reset that moves later while a provider's alerts are off is still announced once they're back on")
+    func mutedResetMoves() {
+        var run = SettingsRun()
+        // Maxed, resetting at 4:58 PM: "limit reached".
+        #expect(run(claude: claude(fiveHour: 100)) == ["Claude 5-hour limit reached"])
+        run.settings.setAlerts(false, for: "claude")
+        // The same cycle now resets at 4:59 PM; 4:58:30 PM passes muted.
+        let later = date("2026-10-10T16:59:00-07:00")
+        #expect(run(claude: claude(fiveHour: 100, fiveHourResetsAt: later), at: date("2026-10-10T16:58:30-07:00")) == [])
+        run.settings.setAlerts(true, for: "claude")
+        #expect(run(claude: claude(fiveHour: 100, fiveHourResetsAt: later), at: date("2026-10-10T16:58:40-07:00")) == [])
+        #expect(run(claude: claude(fiveHour: 100, fiveHourResetsAt: later), at: date("2026-10-10T16:59:10-07:00"))
+            == ["Claude 5-hour limit reset"])
+    }
+
     @Test("a saved alerts.json still loads with custom settings: nothing repeats, a pending reset is announced")
     func savedMemory() throws {
         let memory = AlertMemory.decode(try Data(contentsOf: fixtureURL("alerts-v1.json")))

@@ -42,13 +42,11 @@ public enum UsageEngine {
                                      detailText: value.value == nil && value.text == nil ? nil : value.detail))
                 }
             }
-            if alertSettings.alerts(for: provider.id) {
-                alertWindows += zip(windows, meters).map { window, meter in
-                    LimitAlerts.Window(
-                        id: window.id, names: .init(near: window.nearAlertName, limit: window.alertName),
-                        reading: window.reading, prediction: meter.prediction
-                    )
-                }
+            alertWindows += zip(windows, meters).map { window, meter in
+                LimitAlerts.Window(
+                    id: window.id, names: .init(near: window.nearAlertName, limit: window.alertName),
+                    reading: window.reading, prediction: meter.prediction, muted: !alertSettings.alerts(for: provider.id)
+                )
             }
             let labelWindows = windows.filter(\.inMenuBar)
             if !labelWindows.isEmpty, selection?.menuBar.contains(provider.id) ?? true {
@@ -70,11 +68,11 @@ public enum UsageEngine {
             ))
         }
 
-        // A provider that's off, or has alerts off, sits out: its cycles are
-        // kept, so turning it back on repeats no alert, and a reset that
-        // passes meanwhile is marked announced without an alert.
-        let hidden = Set(readings.providers.map(\.id))
-            .subtracting(shown.map(\.id).filter { alertSettings.alerts(for: $0) })
+        // A provider that's off sits out: its cycles are kept, so turning it
+        // back on repeats no alert, and a reset that passes while it's off
+        // is marked announced without an alert. One with alerts off is
+        // evaluated muted, so its cycles' reset times stay current.
+        let hidden = Set(readings.providers.map(\.id)).subtracting(shown.map(\.id))
         let (asleep, awake) = alertMemory.partitioned { cycle in hidden.contains { cycle.window.hasPrefix("\($0).") } }
         var alerts = LimitAlerts.evaluate(alertWindows, memory: awake, settings: alertSettings, clock: clock)
         alerts.memory = alerts.memory.adding(asleep.map { $0.silencingReset(at: now) })
