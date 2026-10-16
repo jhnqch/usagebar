@@ -418,6 +418,26 @@ struct RelaunchTests {
         #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
     }
 
+    @Test("the failed tag is written before the copy, so a disk too full for anything more still reports it")
+    func markerBeforeCopy() throws {
+        let dir = try TempDirectory()
+        defer { dir.remove() }
+        let app = dir.file("UsageBar.app"), staged = dir.file("staging/UsageBar.app"), status = dir.file("support/update-failed")
+        try makeApp(app, "old")
+        try makeApp(staged, "new")
+        try FileManager.default.createDirectory(atPath: dir.file("support"), withIntermediateDirectories: true)
+        try dir.write("open", "#!/bin/sh\nexit 0\n", executable: true)
+        // A copy that fails on a full disk, noting what the status file held when it started.
+        try dir.write("bin/ditto", "#!/bin/sh\ncat \"\(status)\" > \"\(dir.file("seen"))\" 2>/dev/null\nexit 1\n", executable: true)
+        let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, tag: "v1.1.0", statusFile: status, opener: dir.file("open"))
+        let result = shell(command.executable, command.arguments, in: command.directory,
+                           environment: ["PATH": dir.file("bin") + ":/usr/bin:/bin"])
+        #expect(result.status != 0)
+        #expect(build(app) == "old")
+        #expect((try? String(contentsOfFile: dir.file("seen"), encoding: .utf8)) == "v1.1.0\n")
+        #expect(failedTag(status) == "v1.1.0")
+    }
+
     @Test("a status file that doesn't hold a release tag reads as none", arguments: ["", "garbage\n", "--force\n", "v1.1\n", "v1.2.0-beta\n"])
     func unreadableStatus(text: String) {
         #expect(Relaunch.failedTag(status: text) == nil)
