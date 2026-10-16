@@ -347,6 +347,9 @@ struct AutomaticInstallTests {
         #expect(result8)
         #expect(updater.banner?.style == .failed)
         #expect(updater.banner?.title == "Couldn't update to v1.1.0")
+        // Try again works before any check.
+        var retried = updater
+        #expect(retried.startInstall()?.tag == "v1.1.0")
         let result9 = updater.checked(found("v1.2.0"), at: now + day)
         #expect(result9 == .install)
     }

@@ -238,10 +238,14 @@ public struct Updater: Equatable, Sendable {
     /// The one-click update starts: returns the release to install, or nil
     /// when there's none, this build only notifies, or one is underway.
     public mutating func startInstall() -> Release? {
-        guard canInstall, let available else { return nil }
+        // "Try again" retries the failed release, even when no check since
+        // a relaunch has found it again.
+        var target = available
+        if case let .failed(release, _) = phase { target = release }
+        guard canInstall, let target else { return nil }
         guard allowsCheck else { return nil }
-        phase = .installing(available, .checkingSource)
-        return available
+        phase = .installing(target, .checkingSource)
+        return target
     }
 
     /// The update reached `step`.
