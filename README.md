@@ -149,7 +149,7 @@ UsageBar records where it was built from: the clone's path, the GitHub repo `ori
 
 1. When a newer release is out, the popover shows **Update to vX.Y.Z** above the footer.
 2. Click **Update**. UsageBar checks the release out in your clone (`git fetch --tags origin`, then `git checkout --detach vX.Y.Z`), builds it with `scripts/build.sh`, and relaunches into the new version. Your installed app is replaced only after the build succeeds.
-3. If something fails, the popover says why and where the log is: `~/Library/Application Support/UsageBar/update.log`.
+3. If something fails, the popover says why and where the log is: `~/Library/Application Support/UsageBar/update.log`. That includes the last step: if the new build can't replace the installed app (for example, because the disk is full), the old version reopens and says so.
 
 The update refuses to run when your clone has uncommitted changes, or is on a branch other than `main` and not on a release tag. It never deletes untracked files.
 
@@ -193,7 +193,7 @@ These steps remove everything UsageBar creates. Run the commands in Terminal.
    defaults delete io.github.jhnqch.usagebar
    ```
 
-8. **The support directory**, which holds the status line's saved limits (`claude-status-line.json`), the alerts already sent (`alerts.json`), the last update's log (`update.log`) and its build (`Update/`):
+8. **The support directory**, which holds the status line's saved limits (`claude-status-line.json`), the alerts already sent (`alerts.json`), the last update's log (`update.log`), its build (`Update/`) and, briefly, a note that its app couldn't be replaced (`update-failed`):
 
    ```sh
    rm -rf ~/Library/Application\ Support/UsageBar
@@ -225,7 +225,7 @@ Other notes: "No API key saved" means there's no key to send (step 6). "api.deep
 
 **Claude's status line stopped updating.** The status line runs the command at the path you installed. If you moved the app or built it elsewhere, run the install command from step 6 again with the new path (add `--replace`).
 
-**An update failed.** Read `~/Library/Application Support/UsageBar/update.log`. The usual causes are uncommitted changes in your clone or a build error. Fix the cause and click **Update** again, or update by hand (step 8).
+**An update failed.** Read `~/Library/Application Support/UsageBar/update.log`. The usual causes are uncommitted changes in your clone or a build error. If the build worked but the app couldn't be replaced, the log ends with "Couldn't install"; check there's free disk space and that you can write to the app's folder. Fix the cause and click **Try again**, or update by hand (step 8). A release that failed isn't installed automatically again until you try it yourself or a newer one comes out.
 
 **UsageBar isn't in the menu bar.** Check it's running: `pgrep -x UsageBar`. If it is, the menu bar may be too full; on a Mac with a notch, items past it are hidden. Quit some other menu bar apps, or turn off **Show in menu bar** for providers you don't need.
 

@@ -29,7 +29,7 @@ struct ReadmeTests {
             "defaults delete io.github.jhnqch.usagebar",
             // The support directory and what's in it.
             "~/Library/Application\\ Support/UsageBar",
-            ClaudeStatusLine.fileName, AlertMemory.fileName, "update.log", "Update/",
+            ClaudeStatusLine.fileName, AlertMemory.fileName, "update.log", "Update/", Relaunch.statusFileName,
             // The status line entry and the installer's backups (`Installer`).
             "\"statusLine\"", "usagebar-statusline", "settings.json.usagebar-backup-",
         ]
