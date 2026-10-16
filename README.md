@@ -72,7 +72,7 @@ UsageBar is built from source on the Mac that runs it. There's no signed downloa
 5. **Balances and credits.** Key providers also show rows such as "$12.40 left of $20" (drawn as a meter) or "Balance ¥110 · ¥100 topped up · ¥10 granted".
 6. **Cost chart.** "This week" charts Claude's and Codex's use for each day of the current weekly window, stacked by model, in API-equivalent dollars. Dashed outlines are days still to come. Hover over a bar for that day's total; "Total" sums the week. Claude's 5-hour meter also shows what the current session has cost.
 7. **Notes.** A line such as "Key rejected" under a section explains a problem with that provider (see [Troubleshooting](#troubleshooting)).
-8. **Footer.** **Refresh** (⌘R) asks every provider again now. **Providers** opens the Providers menu (step 5). **Quit** (⌘Q) quits UsageBar.
+8. **Footer.** **Refresh** (⌘R) reads the local sources and asks Codex again. Claude's usage endpoint and the key providers are asked again too, unless they were asked in the last minute or are backing off after an error. **Providers** opens the Providers menu (step 5). **Quit** (⌘Q) quits UsageBar.
 
 ### 5. Choose what's shown: the Providers menu
 
@@ -133,11 +133,11 @@ To replace a key, paste a new one in the same window. To remove it, click **Remo
 
 ### 7. Set up alerts
 
-UsageBar posts a macOS notification when a limit window crosses your warning threshold, when it reaches its limit, and when a full window resets. Each window alerts at most once per reset cycle.
+UsageBar posts a macOS notification when a limit window crosses your warning threshold and when a full window resets. A window that's already at 100% when UsageBar first sees it in a cycle (say, it filled up while your Mac was asleep) gets a "limit reached" alert instead of the warning. Each window warns at most once per reset cycle, so one that got the threshold warning doesn't alert again when it reaches 100%.
 
 1. Click **Providers** and find the **Alerts** section.
 2. **Warn at** sets the threshold: 50, 75, 80, 85, 90 (the default) or 95% used. The menu bar and meters turn orange at the same threshold. If you lower it below a window's current use, that window warns once, unless it already warned this cycle.
-3. **Limit reached alerts** and **Limit reset alerts** turn those two kinds on or off.
+3. **Limit reached alerts** and **Limit reset alerts** turn the "limit reached" and reset alerts on or off.
 4. To silence one provider without hiding it, turn off its own **Alerts** item in its section.
 5. Click a notification to open the popover.
 
@@ -207,7 +207,7 @@ UsageBar keeps nothing else: no caches, cookies or other files. macOS may keep l
 
 **A row or the menu bar shows "—".** UsageBar has no reading for it yet, or couldn't read the answer.
 
-1. Click **Refresh** in the popover.
+1. Click **Refresh** in the popover. Claude's usage endpoint or a key provider asked in the last minute, or backing off after an error, waits for its next turn.
 2. For Claude: make sure the status line is installed (step 6) and send Claude Code a message, and allow the Keychain prompt (step 2). The weekly Fable window comes only from the usage endpoint, so it stays "—" if the Keychain read was denied.
 3. For Codex: open Codex once to check it's installed and signed in. To pick a specific `codex` binary, set `USAGEBAR_CODEX` to its path.
 4. For a key provider, read the note under its section (below).
