@@ -114,8 +114,13 @@ struct ReleaseScriptTests {
             git("init", "-q", "--bare", "-b", "main", origin, in: root.path)
             git("clone", "-q", origin, work, in: root.path)
             git("checkout", "-q", "-b", "main", in: work)
-            let script = try String(contentsOfFile: "\(repoRoot)/scripts/release.sh", encoding: .utf8)
-            try root.write("work/scripts/release.sh", script, executable: true)
+            // origin reads as GitHub; git takes it to the local bare repo.
+            git("remote", "set-url", "origin", "https://github.com/acme/usagebar.git", in: work)
+            git("config", "url.\(origin).insteadOf", "https://github.com/acme/usagebar.git", in: work)
+            for script in ["release.sh", "build-info.sh"] {
+                let text = try String(contentsOfFile: "\(repoRoot)/scripts/\(script)", encoding: .utf8)
+                try root.write("work/scripts/\(script)", text, executable: true)
+            }
             try root.write("work/.gitignore", "*.local\n")
             git("add", "-A", in: work)
             git("commit", "-q", "-m", "first", in: work)
@@ -146,7 +151,19 @@ struct ReleaseScriptTests {
         #expect(result.status == 0, "\(result.output)")
         #expect(repo.hasTag("v1.2.3", in: repo.origin))
         #expect(git("cat-file", "-t", "v1.2.3", in: repo.work).output == "tag\n")
-        #expect(repo.ghArguments == ["release", "create", "v1.2.3", "--verify-tag", "--generate-notes", "--title", "UsageBar v1.2.3"])
+        #expect(repo.ghArguments == ["release", "create", "v1.2.3", "--repo", "acme/usagebar", "--verify-tag", "--generate-notes",
+                                     "--title", "UsageBar v1.2.3"])
+    }
+
+    @Test("an origin off GitHub is refused before anything is tagged")
+    func notGitHub() throws {
+        let repo = try Repo()
+        defer { repo.root.remove() }
+        git("remote", "set-url", "origin", repo.origin, in: repo.work)
+        let result = repo.release("v1.2.3")
+        #expect(result.status != 0)
+        #expect(result.output.contains("origin isn't a GitHub repository"))
+        #expect(!repo.hasTag("v1.2.3", in: repo.work))
     }
 
     @Test("a tag that isn't vX.Y.Z is refused", arguments: ["1.2.3", "v1.2", "v1.2.3-rc.1", "v01.2.3", "latest", ""])

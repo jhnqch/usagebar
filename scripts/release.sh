@@ -21,6 +21,8 @@ tag="${1:-}"
   || die "usage: scripts/release.sh vX.Y.Z (got '${tag}'; a release tag is vX.Y.Z, e.g. v1.2.0)"
 command -v gh >/dev/null || die "needs the GitHub CLI: https://cli.github.com"
 
+repository="$(scripts/build-info.sh | sed -n 's/^repository=//p')"
+[ -n "$repository" ] && git config --get remote.origin.url >/dev/null || die "origin isn't a GitHub repository"
 [ -z "$(git status --porcelain --untracked-files=no)" ] || die "uncommitted changes; commit or stash them first"
 branch="$(git symbolic-ref --quiet --short HEAD || true)"
 [ "$branch" = "main" ] || die "releases are cut from main, not '${branch:-a detached HEAD}'"
@@ -33,5 +35,6 @@ fi
 
 git tag --annotate "$tag" --message "UsageBar $tag"
 git push --quiet origin "refs/tags/$tag"
-gh release create "$tag" --verify-tag --generate-notes --title "UsageBar $tag"
+# The repo installed apps check: origin's, whatever `gh repo set-default` says.
+gh release create "$tag" --repo "$repository" --verify-tag --generate-notes --title "UsageBar $tag"
 echo "Released $tag"
