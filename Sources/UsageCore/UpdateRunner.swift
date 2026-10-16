@@ -149,18 +149,38 @@ public struct UpdateRunner: Sendable {
 /// bundle beside the installed one, renames the installed one aside and the
 /// copy into its place (putting the old one back if that fails), and opens
 /// whichever is there. A failed copy leaves the installed app as it was.
+///
+/// The reopened app can't see the helper's exit status, so the helper
+/// writes the release's tag to `statusFile` before the copy and removes it
+/// once the swap works; a tag left there is a failed swap, for the next
+/// launch to read (`failedTag(status:)`).
 public enum Relaunch {
+    /// The status file's name in the support directory.
+    public static let statusFileName = "update-failed"
+
     /// The helper: `/bin/sh` with a fixed script and the paths as
     /// arguments, never spliced into the script.
-    public static func command(waitingFor pid: Int32, staged: String, app: String, opener: String = "/usr/bin/open") -> Command {
-        Command("/bin/sh", ["-c", script, "usagebar-relaunch", String(pid), staged, app, opener], in: "/")
+    public static func command(waitingFor pid: Int32, staged: String, app: String, tag: String, statusFile: String,
+                               opener: String = "/usr/bin/open") -> Command {
+        Command("/bin/sh", ["-c", script, "usagebar-relaunch", String(pid), staged, app, opener, tag, statusFile], in: "/")
+    }
+
+    /// The release whose swap failed, from the text of the status file a
+    /// relaunch helper left; nil when it doesn't hold a release tag. The
+    /// app reads the file and removes it, so a failure is reported once.
+    public static func failedTag(status: String) -> String? {
+        let line = status.prefix(256).split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        return Release(tag: line.trimmingCharacters(in: .whitespaces), page: nil)?.tag
     }
 
     static let script = """
-    pid="$1"; new="$2"; app="$3"; opener="$4"
+    pid="$1"; new="$2"; app="$3"; opener="$4"; tag="$5"; status_file="$6"
     while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
     next="$app.new"; old="$app.previous"
     rm -rf "$next" "$old"
+    # Written first and removed only once the swap works: a disk too full
+    # to copy the app may have no room for it afterwards.
+    printf '%s\\n' "$tag" > "$status_file"
     status=1
     # Copy beside the installed app first (staging may be on another
     # volume), so the swap itself is two renames on one volume.
@@ -175,7 +195,12 @@ public enum Relaunch {
       fi
     fi
     rm -rf "$next" "$old"
-    [ $status = 0 ] && rm -rf "$new"
+    if [ $status = 0 ]; then
+      rm -rf "$new"
+      rm -f "$status_file"
+    else
+      echo "Couldn't install $tag: the app at $app wasn't replaced."
+    fi
     "$opener" "$app"
     exit $status
     """

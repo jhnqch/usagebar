@@ -293,6 +293,73 @@ struct AutomaticInstallTests {
         #expect(newer == .install)
     }
 
+    @Test("a swap that failed after the build shows after relaunch, with the log, and isn't retried until Try again")
+    func swapFailedAfterRelaunch() throws {
+        let store = MemoryStore()
+        var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
+        let result1 = updater.checked(found("v1.1.0"))
+        #expect(result1 == .install)
+        _ = updater.startInstall()
+        updater.advance(.relaunching)
+        updater.settings.save(to: store)
+
+        // The helper couldn't replace the app and reopened the old build.
+        var relaunched = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        let result2 = relaunched.swapFailed(tag: "v1.1.0", logPath: "~/Library/Application Support/UsageBar/update.log")
+        #expect(result2)
+        relaunched.settings.save(to: store)
+        let banner = try #require(relaunched.banner)
+        #expect(banner.style == .failed)
+        #expect(banner.title == "Couldn't update to v1.1.0")
+        #expect(banner.detail == "The new build couldn't replace the installed app, so this is still the old version.")
+        #expect(banner.logPath == "~/Library/Application Support/UsageBar/update.log")
+        #expect(banner.page == URL(string: "https://github.com/acme/usagebar/releases/tag/v1.1.0"))
+
+        // The daily check finds the same release: no automatic retry.
+        let result3 = relaunched.checked(found("v1.1.0"), at: now + day)
+        #expect(result3 == nil)
+        #expect(relaunched.banner?.style == .failed)
+        // Nor after another relaunch.
+        var again = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        let result4 = again.checked(found("v1.1.0"), at: now + 2 * day)
+        #expect(result4 == nil)
+        // Try again.
+        let result5 = relaunched.startInstall()
+        #expect(result5?.tag == "v1.1.0")
+    }
+
+    @Test("a reported swap failure is ignored when this build already has that release, or it isn't a release")
+    func swapFailedButCurrent() {
+        var current = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
+        let result6 = current.swapFailed(tag: "v1.0.0", logPath: nil)
+        #expect(!result6)
+        #expect(current.banner == nil)
+        #expect(current.settings.failedTag == nil)
+        let result7 = current.swapFailed(tag: "garbage", logPath: nil)
+        #expect(!result7)
+        #expect(current.banner == nil)
+    }
+
+    @Test("a swap failure with no saved release still shows, and a newer release replaces it")
+    func swapFailedWithoutSavedRelease() throws {
+        var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
+        let result8 = updater.swapFailed(tag: "v1.1.0", logPath: nil)
+        #expect(result8)
+        #expect(updater.banner?.style == .failed)
+        #expect(updater.banner?.title == "Couldn't update to v1.1.0")
+        // Try again works before any check.
+        var retried = updater
+        #expect(retried.startInstall()?.tag == "v1.1.0")
+        // Quit before any check: the next launch still won't retry it automatically.
+        let store = MemoryStore()
+        updater.settings.save(to: store)
+        var relaunched = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        #expect(relaunched.settings.failedTag == "v1.1.0")
+        #expect(relaunched.checked(found("v1.1.0"), at: now + day) == nil)
+        let result9 = updater.checked(found("v1.2.0"), at: now + day)
+        #expect(result9 == .install)
+    }
+
     @Test("with Install automatically on, a newer release installs itself")
     func installs() {
         var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
@@ -386,6 +453,8 @@ struct UpdateFixtureTests {
         ("update-available", UpdateBanner.Style.available, "Update to v1.1.0", "You have v1.0.0"),
         ("update-installing", .working, "Updating to v1.1.0…", "Building, which takes a few minutes"),
         ("update-failed", .failed, "Couldn't update to v1.1.0", "The build failed."),
+        ("update-swap-failed", .failed, "Couldn't update to v1.1.0",
+         "The new build couldn't replace the installed app, so this is still the old version."),
         ("update-notify-only", .notifyOnly, "UsageBar v1.1.0 is available", "This build wasn't made from a git checkout. To build the new version, run:"),
     ])
     func states(name: String, style: UpdateBanner.Style, title: String, detail: String) throws {
@@ -398,9 +467,9 @@ struct UpdateFixtureTests {
         #expect(fixture.update?.menu(clock: clock).status == "v1.1.0 is available")
     }
 
-    @Test("the failed fixture points at the log")
-    func failedLog() throws {
-        #expect(try loadFixture("update-failed").update?.banner?.logPath == "~/Library/Application Support/UsageBar/update.log")
+    @Test("the failed fixtures point at the log", arguments: ["update-failed", "update-swap-failed"])
+    func failedLog(name: String) throws {
+        #expect(try loadFixture(name).update?.banner?.logPath == "~/Library/Application Support/UsageBar/update.log")
     }
 
     @Test("fixtures without an update section, or with a broken one, have none")

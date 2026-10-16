@@ -318,6 +318,11 @@ struct RelaunchTests {
         try build.write(toFile: path + "/Contents/build", atomically: true, encoding: .utf8)
     }
 
+    /// The release tag the helper left in the status file, if any.
+    private func failedTag(_ statusFile: String) -> String? {
+        (try? String(contentsOfFile: statusFile, encoding: .utf8)).flatMap(Relaunch.failedTag(status:))
+    }
+
     private func build(_ app: String) -> String? {
         try? String(contentsOfFile: app + "/Contents/build", encoding: .utf8)
     }
@@ -330,6 +335,7 @@ struct RelaunchTests {
         try makeApp(app, "old")
         try makeApp(staged, "new")
         try dir.write("open", "#!/bin/sh\necho \"$1\" > \"$(dirname \"$0\")/opened\"\n", executable: true)
+        try dir.write("update-failed", "v1.0.5\n")  // from an earlier failed swap
 
         // Stands in for the running app.
         let running = Process()
@@ -337,7 +343,8 @@ struct RelaunchTests {
         running.arguments = ["30"]
         try running.run()
 
-        let command = Relaunch.command(waitingFor: running.processIdentifier, staged: staged, app: app, opener: dir.file("open"))
+        let command = Relaunch.command(waitingFor: running.processIdentifier, staged: staged, app: app, tag: "v1.1.0",
+                                       statusFile: dir.file("update-failed"), opener: dir.file("open"))
         let helper = Task.detached { shell(command.executable, command.arguments, in: command.directory) }
         try await Task.sleep(for: .milliseconds(700))
         #expect(build(app) == "old")
@@ -350,6 +357,7 @@ struct RelaunchTests {
         #expect(!FileManager.default.fileExists(atPath: staged))
         #expect(!FileManager.default.fileExists(atPath: app + ".previous"))
         #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + "\n")
+        #expect(failedTag(dir.file("update-failed")) == nil)
     }
 
     @Test("a leftover from an earlier swap doesn't get in the way")
@@ -362,7 +370,8 @@ struct RelaunchTests {
         try makeApp(app + ".new", "half-copied")
         try makeApp(app + ".previous", "older")
         try dir.write("open", "#!/bin/sh\nexit 0\n", executable: true)
-        let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, opener: dir.file("open"))
+        let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, tag: "v1.1.0", statusFile: dir.file("update-failed"),
+                                       opener: dir.file("open"))
         let result = shell(command.executable, command.arguments, in: command.directory)
         #expect(result.status == 0, "\(result.output)")
         #expect(build(app) == "new")
@@ -377,10 +386,65 @@ struct RelaunchTests {
         let app = dir.file("UsageBar.app")
         try makeApp(app, "old")
         try dir.write("open", "#!/bin/sh\necho \"$1\" > \"$(dirname \"$0\")/opened\"\n", executable: true)
-        let command = Relaunch.command(waitingFor: 999_999, staged: dir.file("missing/UsageBar.app"), app: app, opener: dir.file("open"))
+        let command = Relaunch.command(waitingFor: 999_999, staged: dir.file("missing/UsageBar.app"), app: app, tag: "v1.1.0",
+                                       statusFile: dir.file("update-failed"), opener: dir.file("open"))
         let result = shell(command.executable, command.arguments, in: command.directory)
         #expect(result.status != 0)
         #expect(build(app) == "old")
         #expect(FileManager.default.fileExists(atPath: dir.file("opened")))
+        #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
+    }
+
+    @Test("a swap that can't write beside the app keeps the old one and leaves the failed tag for the next launch")
+    func swapFails() async throws {
+        let dir = try TempDirectory()
+        defer { dir.remove() }
+        let folder = dir.file("Applications"), app = folder + "/UsageBar.app", staged = dir.file("staging/UsageBar.app")
+        try makeApp(app, "old")
+        try makeApp(staged, "new")
+        try dir.write("open", "#!/bin/sh\necho \"$1\" > \"$(dirname \"$0\")/opened\"\n", executable: true)
+        // Like a full disk: nothing can be created beside the installed app.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder) }
+
+        let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, tag: "v1.1.0", statusFile: dir.file("update-failed"),
+                                       opener: dir.file("open"))
+        let result = shell(command.executable, command.arguments, in: command.directory)
+        #expect(result.status != 0)
+        #expect(result.output.contains("Couldn't install v1.1.0"), "\(result.output)")
+        #expect(build(app) == "old")
+        #expect(FileManager.default.fileExists(atPath: staged))
+        #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + "\n")
+        #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
+    }
+
+    @Test("the failed tag is written before the copy, so a disk too full for anything more still reports it")
+    func markerBeforeCopy() throws {
+        let dir = try TempDirectory()
+        defer { dir.remove() }
+        let app = dir.file("UsageBar.app"), staged = dir.file("staging/UsageBar.app"), status = dir.file("support/update-failed")
+        try makeApp(app, "old")
+        try makeApp(staged, "new")
+        try FileManager.default.createDirectory(atPath: dir.file("support"), withIntermediateDirectories: true)
+        try dir.write("open", "#!/bin/sh\nexit 0\n", executable: true)
+        // A copy that fails on a full disk, noting what the status file held when it started.
+        try dir.write("bin/ditto", "#!/bin/sh\ncat \"\(status)\" > \"\(dir.file("seen"))\" 2>/dev/null\nexit 1\n", executable: true)
+        let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, tag: "v1.1.0", statusFile: status, opener: dir.file("open"))
+        let result = shell(command.executable, command.arguments, in: command.directory,
+                           environment: ["PATH": dir.file("bin") + ":/usr/bin:/bin"])
+        #expect(result.status != 0)
+        #expect(build(app) == "old")
+        #expect((try? String(contentsOfFile: dir.file("seen"), encoding: .utf8)) == "v1.1.0\n")
+        #expect(failedTag(status) == "v1.1.0")
+    }
+
+    @Test("a status file that doesn't hold a release tag reads as none", arguments: ["", "garbage\n", "--force\n", "v1.1\n", "v1.2.0-beta\n"])
+    func unreadableStatus(text: String) {
+        #expect(Relaunch.failedTag(status: text) == nil)
+    }
+
+    @Test("the status file's tag may have surrounding blanks or no newline", arguments: ["v1.1.0", "v1.1.0\n", "  v1.1.0  \n\nmore\n"])
+    func statusTag(text: String) {
+        #expect(Relaunch.failedTag(status: text) == "v1.1.0")
     }
 }
