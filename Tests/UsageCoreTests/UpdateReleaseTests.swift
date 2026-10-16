@@ -59,7 +59,7 @@ struct UpdateReleaseTests {
 
     @Test("missing draft, prerelease and page fields still read")
     func missingFields() {
-        #expect(release(#"{"tag_name": "1.3.0"}"#) == .release(Release(version: SemanticVersion("1.3.0")!, tag: "1.3.0", page: nil)))
+        #expect(release(#"{"tag_name": "v1.3.0"}"#) == .release(Release(version: SemanticVersion("1.3.0")!, tag: "v1.3.0", page: nil)))
     }
 
     @Test("a page off github.com is dropped")
@@ -77,8 +77,8 @@ struct UpdateReleaseTests {
         #expect(release(json) == .noRelease)
     }
 
-    @Test("a malformed tag or answer means no release", arguments: [
-        #"{"tag_name": "latest"}"#, #"{"tag_name": "v1.2"}"#, #"{"tag_name": 12}"#, #"{"name": "v1.2.0"}"#, #"[]"#, "not json", "",
+    @Test("a malformed tag or answer means no release; release tags are vX.Y.Z", arguments: [
+        #"{"tag_name": "latest"}"#, #"{"tag_name": "1.3.0"}"#, #"{"tag_name": "v1.2"}"#, #"{"tag_name": 12}"#, #"{"name": "v1.2.0"}"#, #"[]"#, "not json", "",
     ])
     func malformed(json: String) {
         #expect(release(json) == .noRelease)

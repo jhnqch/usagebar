@@ -60,6 +60,13 @@ public struct Release: Equatable, Sendable {
         self.tag = tag
         self.page = page
     }
+
+    /// A release from its tag and page as GitHub gives them: nil unless the
+    /// tag is a stable `vX.Y.Z`; the page only when it's on github.com.
+    public init?(tag: String, page: String?) {
+        guard tag.hasPrefix("v"), let version = SemanticVersion(tag), !version.isPrerelease else { return nil }
+        self.init(version: version, tag: tag, page: page.flatMap(URL.init(string:)).filter { $0.scheme == "https" && $0.host?.lowercased() == "github.com" })
+    }
 }
 
 /// What one look at the latest release found.
@@ -95,7 +102,8 @@ public enum GitHubRelease {
     }
 
     /// Reads the answer. Missing or extra fields are tolerated; only a
-    /// stable `vX.Y.Z` (or `X.Y.Z`) tag that isn't a draft or prerelease
+    /// stable `vX.Y.Z` tag, as `scripts/release.sh` makes and
+    /// `scripts/build-info.sh` records, that isn't a draft or prerelease
     /// makes a release.
     public static func check(_ outcome: PollOutcome) -> ReleaseCheck {
         switch outcome {
@@ -106,12 +114,10 @@ public enum GitHubRelease {
             guard status == 200 else { return .failed("GitHub answered \(status)") }
             guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
                   let tag = object["tag_name"] as? String,
-                  let version = SemanticVersion(tag), !version.isPrerelease,
-                  object["draft"] as? Bool != true, object["prerelease"] as? Bool != true
+                  object["draft"] as? Bool != true, object["prerelease"] as? Bool != true,
+                  let release = Release(tag: tag, page: object["html_url"] as? String)
             else { return .noRelease }
-            let page = (object["html_url"] as? String).flatMap(URL.init(string:))
-                .filter { $0.scheme == "https" && $0.host?.lowercased() == "github.com" }
-            return .release(Release(version: version, tag: tag, page: page))
+            return .release(release)
         }
     }
 }
