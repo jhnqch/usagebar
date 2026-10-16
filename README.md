@@ -1,0 +1,1 @@
+Evidence images for pull requests, rendered from synthetic snapshot fixtures.
