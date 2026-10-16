@@ -5,6 +5,9 @@ import UsageCore
 struct PopoverView: View {
     var snapshot: UsageSnapshot
     var height: Height = .full
+    /// The update line above the footer; nil for none.
+    var update: UpdateBanner? = nil
+    var updateActions = UpdateActions()
     var onShowProviders: () -> Void = {}
     var onRefresh: () -> Void = {}
     var onQuit: () -> Void = {}
@@ -39,6 +42,9 @@ struct PopoverView: View {
                     Capsule().fill(palette.muted.opacity(0.55))
                 }
                 .clipped()
+            }
+            if let update {
+                UpdateBannerView(banner: update, actions: updateActions)
             }
             FooterView(onShowProviders: onShowProviders, onRefresh: onRefresh, onQuit: onQuit)
                 .padding(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))

@@ -31,6 +31,14 @@ open ~/Applications/UsageBar.app
 
 `scripts/build.sh` builds a release binary and packages an ad-hoc-signed app at `~/Applications/UsageBar.app` (set `USAGEBAR_APP=/some/path/UsageBar.app` to put it elsewhere). The app isn't notarised, so it's meant to be built on the Mac that runs it. It has no Dock icon and starts at login.
 
+### Updates
+
+The app records where it was built from: the checkout's path, the GitHub repo `origin` points at (so a fork updates from the fork) and the `git describe --tags` version. Once a day it asks GitHub for that repo's latest release. When a newer `vX.Y.Z` is out, the popover shows **Update to vX.Y.Z**. One click checks the release out in your checkout, rebuilds it with `scripts/build.sh` and relaunches. The installed app is replaced only after the build succeeds, and if anything fails the popover says why and where the log is (`~/Library/Application Support/UsageBar/update.log`).
+
+The update refuses to run when the checkout has uncommitted changes, or is on a branch other than `main` and not on a release tag. It never deletes untracked files. A build from a tarball, or one whose checkout has moved, only tells you about the new version and shows the commands to run.
+
+**Providers → Updates** has "Check for updates automatically" (on by default), "Install updates automatically" (off by default) and "Check now".
+
 To run the tests:
 
 ```sh
@@ -108,12 +116,13 @@ The **Quota meter and plan** option in the Providers menu (off by default) also 
 
 ## Privacy and credentials
 
-UsageBar runs entirely on your Mac. It has no server, analytics or telemetry, and talks only to the providers you turn on.
+UsageBar runs entirely on your Mac. It has no server, analytics or telemetry, and talks only to the providers you turn on, plus GitHub for updates.
 
 - **Claude Code's login is read-only.** UsageBar reads the access token from Claude Code's Keychain item, keeps it in memory, and sends it only in the `Authorization` header of requests to `api.anthropic.com`. It never writes, logs, forwards or refreshes it. Refresh tokens are single-use, so refreshing one would sign you out of Claude Code; UsageBar leaves that to Claude Code.
 - **Codex's login stays inside Codex.** UsageBar runs your installed `codex app-server`, which uses its own login. UsageBar never reads Codex's credentials.
 - **API keys** are stored in UsageBar's own Keychain items (service `io.github.jhnqch.usagebar.api-key`, one per provider). A key is sent only over https, only in the `Authorization` header, and only to its provider's host; any other host or a redirect is refused. Keys are never logged, written to disk or put in settings.
-- **Settings** (which providers are on and in the menu bar, and the Alerts settings) live in `UserDefaults` under the bundle id `io.github.jhnqch.usagebar`. The support directory `~/Library/Application Support/UsageBar` holds the status line's saved limits and which alerts have already fired.
+- **Settings** (which providers are on and in the menu bar, the Alerts and Updates settings, and when updates were last checked) live in `UserDefaults` under the bundle id `io.github.jhnqch.usagebar`. The support directory `~/Library/Application Support/UsageBar` holds the status line's saved limits, which alerts have already fired, and the last update's log and build.
+- **Update checks** are a plain `GET https://api.github.com/repos/<owner>/<name>/releases/latest` with no token, at most once a day (and on "Check now"). Updating runs `git fetch` and `git checkout` in your checkout, with your own git setup, and `scripts/build.sh`.
 - **Local logs** (Claude Code transcripts and Codex session logs) are only read, to draw the cost charts.
 
 ## Known risks

@@ -7,6 +7,7 @@ A macOS menu bar app that shows AI subscription limits (Claude, Codex) and API b
 - `scripts/test.sh` runs the test suite. Use it instead of plain `swift test`: with only the Command Line Tools installed (no Xcode), Swift Testing needs the CLT framework and rpath flags that the script adds. Extra arguments go to `swift test`, e.g. `scripts/test.sh --filter DeepSeek`.
 - `scripts/build.sh` builds and packages `~/Applications/UsageBar.app`; set `USAGEBAR_APP` to package somewhere else.
 - `<app>/Contents/MacOS/UsageBar --snapshot <fixture.json> <out.png>` renders the popover from a fixture, for checking visual changes.
+- `scripts/release.sh vX.Y.Z` tags `main` and creates the GitHub Release that installed apps update to (see "Releasing" in `CONTRIBUTING.md`).
 
 ## How to work here
 
@@ -20,6 +21,7 @@ A macOS menu bar app that shows AI subscription limits (Claude, Codex) and API b
 - Leave token refresh to Claude Code and Codex themselves. Their refresh tokens are single-use, so refreshing one here would sign the user out of the real tool.
 - Point installer and settings tests at a temp copy of `~/.claude/settings.json`; the user's real file changes only by explicit request.
 - API keys for key providers live only in UsageBar's own Keychain items (service `io.github.jhnqch.usagebar.api-key`, one per provider). A key goes only into the `Authorization` header of https requests to that provider's declared hosts, which `KeyClient` enforces; it is never printed, logged, put in `UserDefaults`, written to disk or put in a fixture. Tests inject a `KeyStore` and an `HTTPTransport` and use obviously fake keys; they never touch the real Keychain.
+- Update checks are an unauthenticated `GET` to `api.github.com` for the `owner/name` recorded at build time, nothing else. The self-update runs only in the recorded checkout, refuses one with uncommitted changes or off `main` and release tags, never deletes untracked files (no `git clean`), and replaces the installed app only after a successful build. Test it against temp git repos, never a real checkout or `~/Applications`.
 - Fixtures hold responses, never requests or credentials, and no account ids, emails, usernames or local paths.
 
 ## Review focus
