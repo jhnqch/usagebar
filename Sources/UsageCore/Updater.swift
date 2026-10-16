@@ -9,16 +9,21 @@ public struct UpdateSettings: Equatable, Sendable {
     public var installAutomatically: Bool
     /// When GitHub last answered a check.
     public internal(set) var lastCheck: Date?
+    /// The release that check found, so a relaunch still offers it.
+    public internal(set) var latest: Release?
 
-    public init(checkAutomatically: Bool = true, installAutomatically: Bool = false, lastCheck: Date? = nil) {
+    public init(checkAutomatically: Bool = true, installAutomatically: Bool = false, lastCheck: Date? = nil, latest: Release? = nil) {
         self.checkAutomatically = checkAutomatically
         self.installAutomatically = installAutomatically
         self.lastCheck = lastCheck
+        self.latest = latest
     }
 
     static let checkKey = "updates.checkAutomatically"
     static let installKey = "updates.installAutomatically"
     static let lastCheckKey = "updates.lastCheck"
+    static let latestTagKey = "updates.latestTag"
+    static let latestPageKey = "updates.latestPage"
 
     /// The settings saved in `store`; a missing or mistyped value reads as
     /// the default.
@@ -26,7 +31,10 @@ public struct UpdateSettings: Equatable, Sendable {
         self.init(
             checkAutomatically: (store.object(forKey: Self.checkKey) as? Bool) ?? true,
             installAutomatically: (store.object(forKey: Self.installKey) as? Bool) ?? false,
-            lastCheck: store.object(forKey: Self.lastCheckKey) as? Date
+            lastCheck: store.object(forKey: Self.lastCheckKey) as? Date,
+            latest: (store.object(forKey: Self.latestTagKey) as? String).flatMap { tag in
+                Release(tag: tag, page: store.object(forKey: Self.latestPageKey) as? String)
+            }
         )
     }
 
@@ -34,6 +42,8 @@ public struct UpdateSettings: Equatable, Sendable {
         store.set(checkAutomatically, forKey: Self.checkKey)
         store.set(installAutomatically, forKey: Self.installKey)
         store.set(lastCheck, forKey: Self.lastCheckKey)
+        store.set(latest?.tag, forKey: Self.latestTagKey)
+        store.set(latest?.page?.absoluteString, forKey: Self.latestPageKey)
     }
 }
 
@@ -112,7 +122,8 @@ public struct Updater: Equatable, Sendable {
     /// Whether the recorded source checkout is still there; the app looks.
     public var sourceExists: Bool
 
-    public private(set) var latest: Release?
+    /// The release the last check found.
+    public var latest: Release? { settings.latest }
     private var phase = Phase.idle
     private var isChecking = false
     private var lastAttempt: Date?
@@ -165,12 +176,12 @@ public struct Updater: Equatable, Sendable {
         isChecking = false
         switch result {
         case let .release(release):
-            latest = release
+            settings.latest = release
             checkError = nil
             settings.lastCheck = now
             lastAttempt = nil
         case .noRelease:
-            latest = nil
+            settings.latest = nil
             checkError = nil
             settings.lastCheck = now
             lastAttempt = nil
@@ -242,9 +253,16 @@ public struct Updater: Equatable, Sendable {
                 return UpdateBanner(style: .available, title: "Update to \(available.tag)", detail: "You have \(versionText)",
                                     page: available.page)
             }
+            guard build.sourcePath != nil else {
+                // A tarball: there's no checkout to fetch into.
+                let clone = build.repository.map { "git clone --branch \(available.tag) https://github.com/\($0).git && cd \($0.name) && scripts/build.sh" }
+                return UpdateBanner(style: .notifyOnly, title: "UsageBar \(available.tag) is available",
+                                    detail: "This build wasn't made from a git checkout. To build the new version, run:",
+                                    command: clone, page: available.page)
+            }
             return UpdateBanner(
                 style: .notifyOnly, title: "UsageBar \(available.tag) is available",
-                detail: "This build can't update itself. In your UsageBar folder, run:",
+                detail: "The checkout this app was built from is gone. In your UsageBar checkout, run:",
                 command: "git fetch --tags origin && git checkout --detach \(available.tag) && scripts/build.sh",
                 page: available.page
             )

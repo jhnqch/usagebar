@@ -50,6 +50,35 @@ struct UpdateScheduleTests {
         #expect(relaunched.isCheckDue(at: now + day))
     }
 
+    @Test("a release found before a relaunch is still offered after it")
+    func latestRemembered() throws {
+        let store = MemoryStore()
+        var updater = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        _ = updater.checked(found("v1.1.0"))
+        updater.settings.save(to: store)
+
+        let relaunched = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        #expect(!relaunched.isCheckDue(at: now + hour))
+        #expect(relaunched.banner?.title == "Update to v1.1.0")
+        #expect(relaunched.banner?.page == URL(string: "https://github.com/acme/usagebar/releases/tag/v1.1.0"))
+
+        // A later check that finds nothing forgets it.
+        var later = relaunched
+        _ = later.checked(.noRelease, at: now + day)
+        later.settings.save(to: store)
+        #expect(Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store)).banner == nil)
+    }
+
+    @Test("a saved release that no longer reads as one is dropped")
+    func latestCorrupt() {
+        let store = MemoryStore()
+        store.set("nonsense", forKey: "updates.latestTag")
+        store.set("https://evil.example/x", forKey: "updates.latestPage")
+        #expect(UpdateSettings(loadingFrom: store).latest == nil)
+        store.set("v1.1.0", forKey: "updates.latestTag")
+        #expect(UpdateSettings(loadingFrom: store).latest == Release(version: SemanticVersion("1.1.0")!, tag: "v1.1.0", page: nil))
+    }
+
     @Test("a failed answer counts as the day's check; no answer retries in an hour")
     func failures() {
         var updater = Updater(build: fromCheckout)
@@ -142,18 +171,31 @@ struct UpdateBannerTests {
         #expect(banner.detail == "You have an untagged build")
     }
 
-    @Test("a build without a checkout only notifies, with the command to run", arguments: [true, false])
-    func notifyOnly(tarball: Bool) throws {
-        var updater = tarball ? Updater(build: fromTarball) : Updater(build: fromCheckout, sourceExists: false)
+    @Test("a build whose checkout has gone only notifies, with the commands to run in a checkout")
+    func notifyOnlyMovedCheckout() throws {
+        var updater = Updater(build: fromCheckout, sourceExists: false)
         _ = updater.checked(found("v1.1.0"))
         #expect(!updater.canInstall)
         let banner = try #require(updater.banner)
         #expect(banner.style == .notifyOnly)
         #expect(banner.title == "UsageBar v1.1.0 is available")
+        #expect(banner.detail == "The checkout this app was built from is gone. In your UsageBar checkout, run:")
         #expect(banner.command == "git fetch --tags origin && git checkout --detach v1.1.0 && scripts/build.sh")
         #expect(banner.page == URL(string: "https://github.com/acme/usagebar/releases/tag/v1.1.0"))
-        let result6 = updater.startInstall()
-        #expect(result6 == nil)
+        let started = updater.startInstall()
+        #expect(started == nil)
+    }
+
+    @Test("a build from a tarball only notifies, with commands that clone the release")
+    func notifyOnlyTarball() throws {
+        var updater = Updater(build: fromTarball)
+        _ = updater.checked(found("v1.1.0"))
+        let banner = try #require(updater.banner)
+        #expect(banner.style == .notifyOnly)
+        #expect(banner.detail == "This build wasn't made from a git checkout. To build the new version, run:")
+        #expect(banner.command == "git clone --branch v1.1.0 https://github.com/acme/usagebar.git && cd usagebar && scripts/build.sh")
+        let started = updater.startInstall()
+        #expect(started == nil)
     }
 
     @Test("installing shows each step, then a failure with its log")
@@ -287,7 +329,7 @@ struct UpdateFixtureTests {
         ("update-available", UpdateBanner.Style.available, "Update to v1.1.0", "You have v1.0.0"),
         ("update-installing", .working, "Updating to v1.1.0…", "Building, which takes a few minutes"),
         ("update-failed", .failed, "Couldn't update to v1.1.0", "The build failed."),
-        ("update-notify-only", .notifyOnly, "UsageBar v1.1.0 is available", "This build can't update itself. In your UsageBar folder, run:"),
+        ("update-notify-only", .notifyOnly, "UsageBar v1.1.0 is available", "This build wasn't made from a git checkout. To build the new version, run:"),
     ])
     func states(name: String, style: UpdateBanner.Style, title: String, detail: String) throws {
         let fixture = try loadFixture(name)
