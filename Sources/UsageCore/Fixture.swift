@@ -52,7 +52,7 @@ public struct Fixture: Equatable, Sendable {
 
     /// `"update": { "version": "v1.0.0", "repository": "acme/usagebar",
     /// "source": true, "latest": "v1.1.0", "lastCheck": "…",
-    /// "state": "available" | "installing" | "failed", "step": "building",
+    /// "state": "available" | "installing" | "failed" | "swapFailed", "step": "building",
     /// "failure": "The build failed.", "log": "~/…/update.log" }`.
     /// `source` says whether the build has a checkout to update.
     private struct Update: Decodable {
@@ -84,6 +84,8 @@ public struct Fixture: Equatable, Sendable {
             if state == "failed" {
                 updater.fail(UpdateFailure(message: failure ?? "The build failed.", logPath: log))
             }
+            // Relaunched after the helper couldn't swap the new app in.
+            if state == "swapFailed", !updater.swapFailed(tag: latest, logPath: log) { return nil }
             return updater
         }
     }

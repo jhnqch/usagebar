@@ -256,6 +256,23 @@ public struct Updater: Equatable, Sendable {
         settings.failedTag = release.tag
     }
 
+    /// The relaunch helper couldn't swap the built `tag` into place and
+    /// reopened this, the old build (`Relaunch.takeFailedTag`). Shows the
+    /// failure, as a failed build does, and keeps the release from being
+    /// installed automatically again; "Try again" still can. False, and
+    /// nothing changes, when `tag` isn't a release newer than this build.
+    @discardableResult
+    public mutating func swapFailed(tag: String, logPath: String?) -> Bool {
+        guard allowsCheck, let parsed = Release(tag: tag, page: nil) else { return false }
+        if let version = build.version, !version.isOlder(than: parsed.version) { return false }
+        let release = settings.latest?.tag == tag ? settings.latest! : parsed
+        phase = .failed(release, UpdateFailure(message: Self.swapFailureMessage, logPath: logPath))
+        settings.failedTag = tag
+        return true
+    }
+
+    static let swapFailureMessage = "The new build couldn't replace the installed app, so this is still the old version."
+
     // MARK: What it shows
 
     /// The line above the footer; nil when there's nothing to say.

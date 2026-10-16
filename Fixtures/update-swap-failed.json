@@ -1,0 +1,43 @@
+{
+  "_comment": "Synthetic: the update built, but the relaunch helper couldn't swap the new app into place, so the old build reopened.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "claudePlan": "Max",
+    "claude": {
+      "capturedAt": "2026-10-10T14:37:00-07:00",
+      "fiveHour": {
+        "usedPercent": 42,
+        "resetsAt": "2026-10-10T16:58:00-07:00"
+      },
+      "sevenDay": {
+        "usedPercent": 61,
+        "resetsAt": "2026-10-13T07:00:00-07:00"
+      },
+      "sevenDayFable": {
+        "usedPercent": 34,
+        "resetsAt": "2026-10-13T07:00:00-07:00"
+      }
+    },
+    "codex": {
+      "plan": "pro",
+      "capturedAt": "2026-10-10T14:40:00-07:00",
+      "windows": [
+        {
+          "usedPercent": 13,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-15T13:16:00-07:00"
+        }
+      ]
+    }
+  },
+  "update": {
+    "version": "v1.0.0",
+    "repository": "acme/usagebar",
+    "latest": "v1.1.0",
+    "lastCheck": "2026-10-10T14:35:00-07:00",
+    "source": true,
+    "state": "swapFailed",
+    "log": "~/Library/Application Support/UsageBar/update.log"
+  }
+}
