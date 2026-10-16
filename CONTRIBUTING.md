@@ -29,7 +29,7 @@ Tests go through the engine's public interface, with fixtures as input. Adapters
 
 ### Fixtures and snapshot mode
 
-A fixture is JSON holding readings per provider id, a fixed `now`, a `timeZone` and, optionally, which providers are on and the Alerts settings (`"alerts": { "threshold": 75, "limitReached": true, "limitReset": false, "providers": { "codex": false } }`, see `Fixtures/alerts-75.json`):
+A fixture is JSON holding readings per provider id, a fixed `now`, a `timeZone` and, optionally, which providers are on, the Alerts settings (`"alerts": { "threshold": 75, "limitReached": true, "limitReset": false, "providers": { "codex": false } }`, see `Fixtures/alerts-75.json`) and an update state to draw (`"update": { "version": "v1.0.0", "repository": "acme/usagebar", "source": true, "latest": "v1.1.0", "state": "failed", "failure": "The build failed." }`, see `Fixtures/update-*.json`):
 
 ```json
 {
@@ -129,6 +129,22 @@ Add the type to `BuiltInProviders.keyAPIs` in display order. That's the only oth
 ### Providers that don't use an API key
 
 Claude and Codex reuse logins that their own tools already have, read-only. A provider like that conforms to `Provider` directly (see `ClaudeProvider` and `CodexProvider`) and needs its own adapter in `Sources/UsageBar`. Never refresh, store or forward another tool's token: refresh tokens are usually single-use, so refreshing one signs the user out of the real tool. Open an issue to discuss one before starting.
+
+## Releasing
+
+Installed apps update from GitHub Releases: each checks its repo's latest release once a day and offers "Update to vX.Y.Z" when it's newer than the version it was built from. To cut a release from an up-to-date `main`:
+
+```sh
+scripts/release.sh v1.2.0
+```
+
+It tags the current commit with an annotated `v1.2.0`, pushes the tag and creates the GitHub Release with generated notes (it needs the [GitHub CLI](https://cli.github.com), signed in). It refuses a tag that isn't `vX.Y.Z`, uncommitted changes, a branch other than `main`, a `main` that differs from `origin/main`, and a tag that already exists. Drafts and prereleases are never offered to installed apps.
+
+How updates work, for reviewers:
+
+- `scripts/build.sh` records `scripts/build-info.sh`'s output in Info.plist: `UsageBarVersion` (`git describe --tags`), `UsageBarRepository` (origin's GitHub `owner/name`, never the URL, which can hold credentials) and `UsageBarSourcePath`.
+- `Updater` (in `UsageCore`) decides when to check, what the popover and the Updates menu say, and whether to install automatically. `GitHubRelease` builds the request and reads the answer. `UpdateRunner` runs the guarded `git fetch --tags origin` → `git checkout --detach <tag>` → `scripts/build.sh` into a staging app, and `Relaunch` swaps that app into place once the running app has quit. They're tested with a fake clock and transport, a fake command runner, and temp git repos.
+- `UpdateController` (in `Sources/UsageBar`) is the thin adapter: `URLSession`, `Process`, the log file and the relaunch.
 
 ## Pull requests
 
