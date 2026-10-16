@@ -29,7 +29,7 @@ Tests go through the engine's public interface, with fixtures as input. Adapters
 
 ### Fixtures and snapshot mode
 
-A fixture is JSON holding readings per provider id, a fixed `now`, a `timeZone` and, optionally, which providers are on:
+A fixture is JSON holding readings per provider id, a fixed `now`, a `timeZone` and, optionally, which providers are on and the Alerts settings (`"alerts": { "threshold": 75, "limitReached": true, "limitReset": false, "providers": { "codex": false } }`, see `Fixtures/alerts-75.json`):
 
 ```json
 {
@@ -109,7 +109,7 @@ public enum DeepSeekAPI: KeyAPI {
 
 - **`reading(fromResponse:receivedAt:)`** decodes tolerantly. A missing, renamed or mistyped field leaves only its own part of the reading nil, so only that row shows "—". Return nil only when nothing at all is readable. DeepSeek reads amounts as strings (as documented) or numbers, and drops a malformed `balance_infos` entry without losing the others.
 - **`report(_:clock:)`** turns a reading into rows. With a nil reading, return the same rows showing "—". The row kinds:
-  - `.window(LimitWindow)`: a limit that resets, with a percent and reset time. It gets a pace tick, a prediction, a share of the menu bar and the 90% and reset alerts. Set `hasLimitWindows = true` for a provider whose main rows are windows.
+  - `.window(LimitWindow)`: a limit that resets, with a percent and reset time. It gets a pace tick, a prediction, a share of the menu bar and the threshold and reset alerts, which follow the user's Alerts settings (`AlertSettings`: threshold, alert kinds, and the provider's own Alerts switch) with no work on your part. Set `hasLimitWindows = true` for a provider whose main rows are windows.
   - `.credit(CreditRow)`: "$12.40 left of $20", drawn as a meter.
   - `.value(ValueRow)`: a plain value such as "Balance ¥48.20" or "$3.10 this month".
 - **`shift(_:by:)`** moves every date in the reading, so fixtures can be rebased to a new "now". DeepSeek's answer has no dates.

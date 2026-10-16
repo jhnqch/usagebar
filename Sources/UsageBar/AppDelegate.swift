@@ -218,11 +218,15 @@ private struct PopoverHost: View {
             snapshot: model.snapshot,
             height: .capped(fit.maxHeight),
             onShowProviders: {
-                ProvidersMenu.make(model.providerItems, actions: ProvidersMenu.Actions(
+                ProvidersMenu.make(model.providerItems, alerts: model.alertSettings, actions: ProvidersMenu.Actions(
                     setEnabled: { model.setEnabled($0, for: $1) },
                     setInMenuBar: { model.setInMenuBar($0, for: $1) },
                     editKey: onEditKey,
-                    setOption: { model.setOption($0, $1, for: $2) }
+                    setOption: { model.setOption($0, $1, for: $2) },
+                    setAlerts: { model.setAlerts($0, for: $1) },
+                    setThreshold: { model.setAlertThreshold($0) },
+                    setLimitReached: { model.setLimitReachedAlerts($0) },
+                    setLimitReset: { model.setLimitResetAlerts($0) }
                 )).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
             },
             onRefresh: onRefresh,

@@ -17,7 +17,8 @@ enum SnapshotMode {
         let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
         let fixture = try Fixture.decode(data)
         let snapshot = UsageEngine.snapshot(
-            from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone, selection: fixture.selection
+            from: fixture.readings, now: fixture.now, timeZone: fixture.timeZone, selection: fixture.selection,
+            alertSettings: fixture.alertSettings
         )
 
         // The Providers menu as the app would build it for this fixture,
@@ -39,7 +40,8 @@ enum SnapshotMode {
             }
         }
         let menu = ProvidersMenu.make(
-            settings.menuItems(catalog, detected: detected), actions: .init(setEnabled: { _, _ in }, setInMenuBar: { _, _ in })
+            settings.menuItems(catalog, detected: detected, alerts: fixture.alertSettings), alerts: fixture.alertSettings,
+            actions: .init(setEnabled: { _, _ in }, setInMenuBar: { _, _ in })
         )
         print("Providers menu:\n" + ProvidersMenu.describe(menu))
 
