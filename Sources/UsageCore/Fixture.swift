@@ -10,6 +10,9 @@ public struct Fixture: Equatable, Sendable {
     /// Which providers are on and in the menu bar, as the Providers menu
     /// would set them; nil for every provider on and in the menu bar.
     public var selection: ProviderSelection? = nil
+    /// The Alerts settings, as the Providers menu would set them; the
+    /// defaults when the file doesn't say or can't be read.
+    public var alertSettings = AlertSettings()
 
     /// The readings shifted so they sit relative to `newNow` exactly as they
     /// sat relative to `now` when recorded. Lets the app show a sample that
@@ -26,7 +29,11 @@ public struct Fixture: Equatable, Sendable {
             now: raw.now,
             timeZone: raw.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current,
             readings: raw.readings,
-            selection: raw.providers?.value.map { ProviderSelection(enabled: $0.enabled, menuBar: Set($0.menuBar ?? $0.enabled)) }
+            selection: raw.providers?.value.map { ProviderSelection(enabled: $0.enabled, menuBar: Set($0.menuBar ?? $0.enabled)) },
+            alertSettings: raw.alerts?.value.map {
+                AlertSettings(threshold: $0.threshold ?? AlertSettings.defaultThreshold, limitReached: $0.limitReached ?? true,
+                              limitReset: $0.limitReset ?? true, providers: $0.providers ?? [:])
+            } ?? AlertSettings()
         )
     }
 
@@ -35,6 +42,15 @@ public struct Fixture: Equatable, Sendable {
         var timeZone: String?
         var readings: Readings
         var providers: Lenient<Providers>?
+        var alerts: Lenient<Alerts>?
+    }
+
+    private struct Alerts: Decodable {
+        var threshold: Int?
+        var limitReached: Bool?
+        var limitReset: Bool?
+        /// "Alerts" switches by provider id.
+        var providers: [String: Bool]?
     }
 
     private struct Providers: Decodable {

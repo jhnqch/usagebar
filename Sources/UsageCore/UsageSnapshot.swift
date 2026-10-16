@@ -20,14 +20,15 @@ public struct UsageSnapshot: Equatable, Sendable {
     }
 }
 
-/// How close a limit is: normal below 90%, warning from 90%, maxed at 100%.
+/// How close a limit is: normal below the warning threshold (90% unless the
+/// Alerts settings say otherwise), warning from it, maxed at 100%.
 public enum Level: Equatable, Sendable {
     case normal, warning, maxed
 
-    init(percent: Double) {
+    init(percent: Double, warningAt threshold: Double = Double(AlertSettings.defaultThreshold)) {
         switch percent {
         case 100...: self = .maxed
-        case 90...: self = .warning
+        case threshold...: self = .warning
         default: self = .normal
         }
     }

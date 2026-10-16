@@ -1,7 +1,8 @@
 import Foundation
 
-/// A notification to post: a window at 90% or more, or a maxed window that
-/// has reset.
+/// A notification to post: a window at the warning threshold (90% unless
+/// the Alerts settings say otherwise) or more, or a maxed window that has
+/// reset.
 public struct LimitAlert: Equatable, Sendable, Identifiable {
     /// Stable for one window, cycle and kind, so posting it twice replaces
     /// the first.
@@ -30,7 +31,8 @@ public struct AlertMemory: Equatable, Sendable {
         public var name: String
         /// The latest reset time a reading of this cycle gave.
         public var resetsAt: Date
-        /// The 90% alert has fired.
+        /// The threshold alert (or "limit reached") has fired, or was due
+        /// while "limit reached" alerts were off.
         public var warned = false
         /// The window was seen at 100%, so its reset gets an alert.
         public var maxed = false
@@ -126,9 +128,13 @@ enum LimitAlerts {
     /// window. A reset noticed later than that isn't announced.
     static let remembered: TimeInterval = 7 * 24 * 60 * 60
 
-    /// Reset alerts for maxed cycles that have ended, then 90% alerts for
-    /// current cycles, each in the popover's order.
-    static func evaluate(_ windows: [Window], memory: AlertMemory, clock: Clock) -> (alerts: [LimitAlert], memory: AlertMemory) {
+    /// Reset alerts for maxed cycles that have ended, then threshold alerts
+    /// for current cycles, each in the popover's order. A window warns once a
+    /// cycle, at or above `settings.threshold`, however often the threshold
+    /// changes; `settings` can also turn either alert kind off.
+    static func evaluate(
+        _ windows: [Window], memory: AlertMemory, settings: AlertSettings = AlertSettings(), clock: Clock
+    ) -> (alerts: [LimitAlert], memory: AlertMemory) {
         var cycles = memory.cycles.filter { clock.now.timeIntervalSince($0.resetsAt) <= remembered }
         // A reading whose reset has passed is the last cycle's, read as 0%.
         let live = windows.reduce(into: [String: LimitReading]()) { live, window in
@@ -155,21 +161,26 @@ enum LimitAlerts {
                 return cycle.resetsAt <= clock.now || superseded
             }
             .sorted { rank(cycles[$0]) < rank(cycles[$1]) }
+        // With reset alerts off a reset still counts as announced, so turning
+        // them back on doesn't announce it late.
         for index in ended {
             cycles[index].resetAnnounced = true
-            alerts.append(reset(cycles[index], clock: clock))
+            if settings.limitReset { alerts.append(reset(cycles[index], clock: clock)) }
         }
 
         for window in windows {
-            guard let reading = live[window.id], Level(percent: reading.usedPercent) != .normal else { continue }
+            guard let reading = live[window.id], Level(percent: reading.usedPercent, warningAt: settings.warningAt) != .normal else { continue }
             let index = cycles.firstIndex { $0.window == window.id && $0.isCycle(of: reading) } ?? {
                 cycles.append(AlertMemory.Cycle(window: window.id, name: window.names.limit, resetsAt: reading.resetsAt))
                 return cycles.count - 1
             }()
-            if Level(percent: reading.usedPercent) == .maxed { cycles[index].maxed = true }
+            let maxed = Level(percent: reading.usedPercent) == .maxed
+            if maxed { cycles[index].maxed = true }
+            // A window first seen maxed says "limit reached", unless those
+            // alerts are off; either way the cycle has had its one warning.
             if !cycles[index].warned {
                 cycles[index].warned = true
-                alerts.append(near(window, reading, clock: clock))
+                if !maxed || settings.limitReached { alerts.append(near(window, reading, clock: clock)) }
             }
         }
         return (alerts, AlertMemory(cycles: cycles))
