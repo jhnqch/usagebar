@@ -167,10 +167,11 @@ enum LimitAlerts {
             .sorted { rank(cycles[$0]) < rank(cycles[$1]) }
         // With reset alerts off a reset still counts as announced, so turning
         // them back on doesn't announce it late.
-        let muted = Set(windows.filter(\.muted).map(\.id))
+        // Muting goes by the cycle's provider, so a window that's no longer
+        // reported resets quietly too.
         for index in ended {
             cycles[index].resetAnnounced = true
-            if settings.limitReset, !muted.contains(cycles[index].window) { alerts.append(reset(cycles[index], clock: clock)) }
+            if settings.limitReset, settings.alerts(forWindow: cycles[index].window) { alerts.append(reset(cycles[index], clock: clock)) }
         }
 
         for window in windows where !window.muted {

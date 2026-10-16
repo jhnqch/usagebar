@@ -155,6 +155,22 @@ struct AlertKindTests {
             == ["Claude 5-hour limit reset"])
     }
 
+    @Test("a maxed window that stops being reported while its provider's alerts are off resets quietly")
+    func mutedMissingWindow() {
+        var run = SettingsRun()
+        let fiveHourReset = date("2026-10-10T16:10:00-07:00")
+        let both = CodexLimits(capturedAt: now, windows: [
+            CodexWindow(usedPercent: 100, windowMinutes: 300, resetsAt: fiveHourReset),
+            CodexWindow(usedPercent: 40, windowMinutes: 10080, resetsAt: date("2026-10-15T13:16:00-07:00")),
+        ])
+        #expect(run(codex: both) == ["Codex 5-hour limit reached"])
+        run.settings.setAlerts(false, for: "codex")
+        // Only the weekly window is reported now, and the 5-hour reset passes.
+        #expect(run(codex: codex(weekly: 40), at: fiveHourReset + 60) == [])
+        run.settings.setAlerts(true, for: "codex")
+        #expect(run(codex: codex(weekly: 40), at: fiveHourReset + 120) == [])
+    }
+
     @Test("a saved alerts.json still loads with custom settings: nothing repeats, a pending reset is announced")
     func savedMemory() throws {
         let memory = AlertMemory.decode(try Data(contentsOf: fixtureURL("alerts-v1.json")))

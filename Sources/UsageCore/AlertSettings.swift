@@ -42,6 +42,12 @@ public struct AlertSettings: Equatable, Sendable {
         providers[id] ?? true
     }
 
+    /// Whether the window with this id (e.g. "codex.300m") alerts: whether
+    /// its provider does.
+    func alerts(forWindow window: String) -> Bool {
+        !providers.contains { id, isOn in !isOn && window.hasPrefix("\(id).") }
+    }
+
     var warningAt: Double { Double(threshold) }
 
     // MARK: Persistence
