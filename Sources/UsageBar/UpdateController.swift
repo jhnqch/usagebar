@@ -19,6 +19,9 @@ final class UpdateController {
 
     /// The update's log, rewritten by each update.
     static let logURL = supportDirectory.appending(path: "update.log")
+    /// Where the relaunch helper leaves the tag of a release whose swap
+    /// failed, for the next launch to show.
+    static let statusURL = supportDirectory.appending(path: Relaunch.statusFileName)
     /// Where the update builds the new app; the installed one is replaced
     /// only after the old process exits (`Relaunch`).
     static let stagingApp = supportDirectory.appending(path: "Update/UsageBar.app")
@@ -36,6 +39,13 @@ final class UpdateController {
         self.transport = transport
         self.runner = runner
         updater = Updater(build: build, settings: UpdateSettings(loadingFrom: defaults), sourceExists: Self.sourceExists(build.sourcePath))
+        // The relaunch helper couldn't swap in the last update's build, so
+        // this is the old app reopened: say so, as for a failed build.
+        if let tag = Relaunch.takeFailedTag(statusFile: Self.statusURL.path),
+           updater.swapFailed(tag: tag, logPath: (Self.logURL.path as NSString).abbreviatingWithTildeInPath) {
+            log.error("update to \(tag, privacy: .public) built, but the app couldn't be replaced")
+            updater.settings.save(to: defaults)
+        }
     }
 
     var banner: UpdateBanner? { updater.banner }
@@ -108,14 +118,15 @@ final class UpdateController {
                 return
             }
             updater.advance(.relaunching)
-            relaunch(app: app, logFile: logFile)
+            relaunch(app: app, tag: release.tag, logFile: logFile)
         }
     }
 
     /// Starts the helper that waits for this process to exit, swaps the
     /// new build into place and opens it; then quits.
-    private func relaunch(app: URL, logFile: LogFile) {
-        let command = Relaunch.command(waitingFor: ProcessInfo.processInfo.processIdentifier, staged: Self.stagingApp.path, app: app.path)
+    private func relaunch(app: URL, tag: String, logFile: LogFile) {
+        let command = Relaunch.command(waitingFor: ProcessInfo.processInfo.processIdentifier, staged: Self.stagingApp.path, app: app.path,
+                                       tag: tag, statusFile: Self.statusURL.path)
         logFile.append("\nRelaunching \(app.path)\n")
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: command.executable)
