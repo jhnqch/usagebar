@@ -350,6 +350,12 @@ struct AutomaticInstallTests {
         // Try again works before any check.
         var retried = updater
         #expect(retried.startInstall()?.tag == "v1.1.0")
+        // Quit before any check: the next launch still won't retry it automatically.
+        let store = MemoryStore()
+        updater.settings.save(to: store)
+        var relaunched = Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store))
+        #expect(relaunched.settings.failedTag == "v1.1.0")
+        #expect(relaunched.checked(found("v1.1.0"), at: now + day) == nil)
         let result9 = updater.checked(found("v1.2.0"), at: now + day)
         #expect(result9 == .install)
     }

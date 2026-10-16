@@ -41,7 +41,7 @@ final class UpdateController {
         updater = Updater(build: build, settings: UpdateSettings(loadingFrom: defaults), sourceExists: Self.sourceExists(build.sourcePath))
         // The relaunch helper couldn't swap in the last update's build, so
         // this is the old app reopened: say so, as for a failed build.
-        if let tag = Relaunch.takeFailedTag(statusFile: Self.statusURL.path),
+        if let tag = Self.takeStatus().flatMap(Relaunch.failedTag(status:)),
            updater.swapFailed(tag: tag, logPath: (Self.logURL.path as NSString).abbreviatingWithTildeInPath) {
             log.error("update to \(tag, privacy: .public) built, but the app couldn't be replaced")
             updater.settings.save(to: defaults)
@@ -163,6 +163,14 @@ final class UpdateController {
     var actions: UpdateActions {
         UpdateActions(install: { [weak self] in self?.install() }, showLog: { [weak self] in self?.showLog() },
                       copy: { [weak self] in self?.copy($0) }, openPage: { [weak self] in self?.openPage($0) })
+    }
+
+    /// The relaunch helper's status file, removed once read so its failure
+    /// is shown once; nil when there's none.
+    private static func takeStatus() -> String? {
+        guard let data = FileManager.default.contents(atPath: statusURL.path) else { return nil }
+        try? FileManager.default.removeItem(at: statusURL)
+        return String(decoding: data.prefix(256), as: UTF8.self)
     }
 
     /// Whether the recorded checkout is still a checkout with the build script.

@@ -152,7 +152,7 @@ public struct UpdateRunner: Sendable {
 ///
 /// The reopened app can't see the helper's exit status, so a failed swap
 /// writes the release's tag to `statusFile` for the next launch to read
-/// (`takeFailedTag`); a swap that works removes any earlier one.
+/// (`failedTag(status:)`); a swap that works removes any earlier one.
 public enum Relaunch {
     /// The status file's name in the support directory.
     public static let statusFileName = "update-failed"
@@ -164,15 +164,12 @@ public enum Relaunch {
         Command("/bin/sh", ["-c", script, "usagebar-relaunch", String(pid), staged, app, opener, tag, statusFile], in: "/")
     }
 
-    /// The release whose swap failed, from the status file a relaunch
-    /// helper left; nil when there's none or it doesn't hold a release tag.
-    /// The file is removed, so a failure is reported once.
-    public static func takeFailedTag(statusFile: String) -> String? {
-        guard let data = FileManager.default.contents(atPath: statusFile) else { return nil }
-        try? FileManager.default.removeItem(atPath: statusFile)
-        let line = String(decoding: data.prefix(256), as: UTF8.self).split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        let tag = line.trimmingCharacters(in: .whitespaces)
-        return Release(tag: tag, page: nil)?.tag
+    /// The release whose swap failed, from the text of the status file a
+    /// relaunch helper left; nil when it doesn't hold a release tag. The
+    /// app reads the file and removes it, so a failure is reported once.
+    public static func failedTag(status: String) -> String? {
+        let line = status.prefix(256).split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        return Release(tag: line.trimmingCharacters(in: .whitespaces), page: nil)?.tag
     }
 
     static let script = """

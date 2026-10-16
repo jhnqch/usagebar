@@ -261,7 +261,7 @@ public struct Updater: Equatable, Sendable {
     }
 
     /// The relaunch helper couldn't swap the built `tag` into place and
-    /// reopened this, the old build (`Relaunch.takeFailedTag`). Shows the
+    /// reopened this, the old build (`Relaunch.failedTag(status:)`). Shows the
     /// failure, as a failed build does, and keeps the release from being
     /// installed automatically again; "Try again" still can. False, and
     /// nothing changes, when `tag` isn't a release newer than this build.
@@ -272,6 +272,9 @@ public struct Updater: Equatable, Sendable {
         let release = settings.latest?.tag == tag ? settings.latest! : parsed
         phase = .failed(release, UpdateFailure(message: Self.swapFailureMessage, logPath: logPath))
         settings.failedTag = tag
+        // Saved settings are kept only for the repo they name, so the
+        // failed tag outlives a relaunch before any check.
+        settings.checkedRepository = build.repository?.description
         return true
     }
 

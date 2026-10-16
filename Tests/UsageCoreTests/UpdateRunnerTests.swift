@@ -318,6 +318,11 @@ struct RelaunchTests {
         try build.write(toFile: path + "/Contents/build", atomically: true, encoding: .utf8)
     }
 
+    /// The release tag the helper left in the status file, if any.
+    private func failedTag(_ statusFile: String) -> String? {
+        (try? String(contentsOfFile: statusFile, encoding: .utf8)).flatMap(Relaunch.failedTag(status:))
+    }
+
     private func build(_ app: String) -> String? {
         try? String(contentsOfFile: app + "/Contents/build", encoding: .utf8)
     }
@@ -352,7 +357,7 @@ struct RelaunchTests {
         #expect(!FileManager.default.fileExists(atPath: staged))
         #expect(!FileManager.default.fileExists(atPath: app + ".previous"))
         #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + "\n")
-        #expect(Relaunch.takeFailedTag(statusFile: dir.file("update-failed")) == nil)
+        #expect(failedTag(dir.file("update-failed")) == nil)
     }
 
     @Test("a leftover from an earlier swap doesn't get in the way")
@@ -387,10 +392,10 @@ struct RelaunchTests {
         #expect(result.status != 0)
         #expect(build(app) == "old")
         #expect(FileManager.default.fileExists(atPath: dir.file("opened")))
-        #expect(Relaunch.takeFailedTag(statusFile: dir.file("update-failed")) == "v1.1.0")
+        #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
     }
 
-    @Test("a swap that can't write beside the app keeps the old one and leaves the failed tag for the next launch, once")
+    @Test("a swap that can't write beside the app keeps the old one and leaves the failed tag for the next launch")
     func swapFails() async throws {
         let dir = try TempDirectory()
         defer { dir.remove() }
@@ -410,16 +415,16 @@ struct RelaunchTests {
         #expect(build(app) == "old")
         #expect(FileManager.default.fileExists(atPath: staged))
         #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + "\n")
-        #expect(Relaunch.takeFailedTag(statusFile: dir.file("update-failed")) == "v1.1.0")
-        #expect(Relaunch.takeFailedTag(statusFile: dir.file("update-failed")) == nil)  // read once
+        #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
     }
 
-    @Test("a status file that doesn't hold a release tag is dropped", arguments: ["", "garbage\n", "--force\n", "v1.1\n"])
-    func unreadableStatus(text: String) throws {
-        let dir = try TempDirectory()
-        defer { dir.remove() }
-        try dir.write("update-failed", text)
-        #expect(Relaunch.takeFailedTag(statusFile: dir.file("update-failed")) == nil)
-        #expect(!FileManager.default.fileExists(atPath: dir.file("update-failed")))
+    @Test("a status file that doesn't hold a release tag reads as none", arguments: ["", "garbage\n", "--force\n", "v1.1\n", "v1.2.0-beta\n"])
+    func unreadableStatus(text: String) {
+        #expect(Relaunch.failedTag(status: text) == nil)
+    }
+
+    @Test("the status file's tag may have surrounding blanks or no newline", arguments: ["v1.1.0", "v1.1.0\n", "  v1.1.0  \n\nmore\n"])
+    func statusTag(text: String) {
+        #expect(Relaunch.failedTag(status: text) == "v1.1.0")
     }
 }
