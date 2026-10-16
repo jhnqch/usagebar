@@ -5,7 +5,9 @@ import UsageCore
 /// provider with "Show <name>", "Show in menu bar" and "Alerts", and for a
 /// key provider "API key…", which opens its key window, and its options
 /// (GitHub Copilot's premium requests meter); then an Alerts section with
-/// the warning threshold and the two alert kinds.
+/// the warning threshold and the two alert kinds; then an Updates section
+/// with "Check for updates automatically", "Install updates automatically"
+/// and "Check now".
 /// `ProviderSettings.menuItems` and `AlertSettings` decide the rows; this
 /// only builds the menu and forwards the clicks.
 @MainActor
@@ -23,9 +25,12 @@ enum ProvidersMenu {
         var setThreshold: (Int) -> Void = { _ in }
         var setLimitReached: (Bool) -> Void = { _ in }
         var setLimitReset: (Bool) -> Void = { _ in }
+        var setCheckForUpdates: (Bool) -> Void = { _ in }
+        var setInstallUpdates: (Bool) -> Void = { _ in }
+        var checkNow: () -> Void = {}
     }
 
-    static func make(_ items: [ProviderMenuItem], alerts: AlertSettings, actions: Actions) -> NSMenu {
+    static func make(_ items: [ProviderMenuItem], alerts: AlertSettings, updates: UpdateMenu? = nil, actions: Actions) -> NSMenu {
         let menu = NSMenu(title: "Providers")
         menu.autoenablesItems = false
         for (index, item) in items.enumerated() {
@@ -83,8 +88,29 @@ enum ProvidersMenu {
         let reset = ClosureMenuItem(title: "Limit reset alerts") { actions.setLimitReset(!alerts.limitReset) }
         reset.state = alerts.limitReset ? .on : .off
         menu.addItem(reset)
+
+        if let updates {
+            menu.addItem(.separator())
+            menu.addItem(.sectionHeader(title: "Updates"))
+            let check = ClosureMenuItem(title: "Check for updates automatically") { actions.setCheckForUpdates(!updates.checkAutomatically) }
+            check.state = updates.checkAutomatically ? .on : .off
+            menu.addItem(check)
+            let install = ClosureMenuItem(title: "Install updates automatically") { actions.setInstallUpdates(!updates.installAutomatically) }
+            install.state = updates.installAutomatically ? .on : .off
+            install.isEnabled = updates.canInstallAutomatically
+            install.subtitle = updates.installDetail
+            menu.addItem(install)
+            let now = ClosureMenuItem(title: "Check now") { actions.checkNow() }
+            now.representedObject = Self.commandMarker
+            now.subtitle = updates.status
+            now.isEnabled = updates.canCheckNow
+            menu.addItem(now)
+        }
         return menu
     }
+
+    /// Marks an item that runs a command rather than toggling, for `describe`.
+    private static let commandMarker = "command"
 
     /// The menu as text, one line per item, for snapshot mode:
     /// "[x] Show Claude", "[ ] Show in menu bar (disabled)", and a
@@ -98,7 +124,8 @@ enum ProvidersMenu {
                 if let subtitle = item.subtitle { line += " · \(subtitle)" }
                 return line + "\n" + describe(submenu, indent: indent + "    ")
             }
-            var line = item.title.hasSuffix("…") ? "\(indent)\(item.title)" : "\(indent)[\(item.state == .on ? "x" : " ")] \(item.title)"
+            let isCommand = item.title.hasSuffix("…") || item.representedObject as? String == commandMarker
+            var line = isCommand ? "\(indent)\(item.title)" : "\(indent)[\(item.state == .on ? "x" : " ")] \(item.title)"
             if let subtitle = item.subtitle { line += " · \(subtitle)" }
             if !item.isEnabled { line += " (disabled)" }
             return line

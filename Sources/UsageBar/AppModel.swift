@@ -18,6 +18,8 @@ final class AppModel {
     @ObservationIgnored var onSelectionChange: ((ProviderSelection) -> Void)?
     /// A provider's options changed: (provider id, the ids of those on).
     @ObservationIgnored var onOptionsChange: ((String, Set<String>) -> Void)?
+    /// Each tick of the clock, after the refresh (update checks).
+    @ObservationIgnored var onTick: (() -> Void)?
     /// The Providers menu's rows.
     private(set) var providerItems: [ProviderMenuItem] = []
     private(set) var selection: ProviderSelection
@@ -154,6 +156,7 @@ final class AppModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: interval)
                 self?.refresh()
+                self?.onTick?()
             }
         }
     }

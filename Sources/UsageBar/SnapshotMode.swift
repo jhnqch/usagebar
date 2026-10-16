@@ -41,6 +41,7 @@ enum SnapshotMode {
         }
         let menu = ProvidersMenu.make(
             settings.menuItems(catalog, detected: detected, alerts: fixture.alertSettings), alerts: fixture.alertSettings,
+            updates: (fixture.update ?? Updater(build: BuildInfo())).menu(clock: Clock(now: fixture.now, timeZone: fixture.timeZone)),
             actions: .init(setEnabled: { _, _ in }, setInMenuBar: { _, _ in })
         )
         print("Providers menu:\n" + ProvidersMenu.describe(menu))
@@ -55,20 +56,21 @@ enum SnapshotMode {
             print("Key window: \(keyPath)")
         }
 
+        let update = fixture.update?.banner
         let scene: AnyView
         if let screenHeight {
             let cap = PopoverFit.maxHeight(visibleHeight: screenHeight)
             print(measure(snapshot, cap: cap, screenHeight: screenHeight))
             scene = AnyView(HStack(alignment: .top, spacing: 0) {
-                SnapshotScene(snapshot: snapshot, height: .cappedPreview(cap, atBottom: false), screenHeight: screenHeight)
+                SnapshotScene(snapshot: snapshot, update: update, height: .cappedPreview(cap, atBottom: false), screenHeight: screenHeight)
                     .environment(\.colorScheme, .light)
-                SnapshotScene(snapshot: snapshot, height: .cappedPreview(cap, atBottom: true), screenHeight: screenHeight)
+                SnapshotScene(snapshot: snapshot, update: update, height: .cappedPreview(cap, atBottom: true), screenHeight: screenHeight)
                     .environment(\.colorScheme, .dark)
             })
         } else {
             scene = AnyView(HStack(alignment: .top, spacing: 0) {
-                SnapshotScene(snapshot: snapshot).environment(\.colorScheme, .light)
-                SnapshotScene(snapshot: snapshot).environment(\.colorScheme, .dark)
+                SnapshotScene(snapshot: snapshot, update: update).environment(\.colorScheme, .light)
+                SnapshotScene(snapshot: snapshot, update: update).environment(\.colorScheme, .dark)
             })
         }
         let renderer = ImageRenderer(content: scene)
@@ -162,6 +164,7 @@ enum SnapshotMode {
 /// visible height.
 private struct SnapshotScene: View {
     var snapshot: UsageSnapshot
+    var update: UpdateBanner? = nil
     var height: PopoverView.Height = .full
     var screenHeight: CGFloat? = nil
 
@@ -184,7 +187,7 @@ private struct SnapshotScene: View {
             .frame(height: Self.menuBarHeight)
             .background(palette.menuBar)
 
-            PopoverView(snapshot: snapshot, height: height)
+            PopoverView(snapshot: snapshot, height: height, update: update)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.border, lineWidth: 1))
                 .compositingGroup()

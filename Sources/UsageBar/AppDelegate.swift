@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let keyMonitors: [String: any KeyMonitoring]
     private let keyWindow = APIKeyWindow()
     private let notifier = LimitNotifier()
+    private let updates = UpdateController()
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private let popoverFit = PopoverFit()
@@ -49,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
 
         let host = NSHostingController(rootView: PopoverHost(
-            model: model, fit: popoverFit,
+            model: model, updates: updates, fit: popoverFit,
             onRefresh: { [weak self] in self?.refresh(force: true) },
             onEditKey: { [weak self] id in self?.editKey(id) }
         ))
@@ -70,9 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onAlerts = { [notifier] alerts in notifier.post(alerts) }
         notifier.onOpen = { [weak self] in self?.showPopover() }
+        model.onTick = { [updates] in updates.tick() }
         model.refresh()
         model.startTicking()
         run(model.selection)
+        updates.tick()
 
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
@@ -133,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Stopped monitors ignore their refresh.
     private func refresh(force: Bool) {
+        updates.tick()
         model.detectProviders()
         model.refresh()
         claudeStatusLine.refresh()
@@ -209,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// Re-renders the popover whenever the model's snapshot or its height cap changes.
 private struct PopoverHost: View {
     var model: AppModel
+    var updates: UpdateController
     var fit: PopoverFit
     var onRefresh: () -> Void
     var onEditKey: (String) -> Void
@@ -217,8 +222,10 @@ private struct PopoverHost: View {
         PopoverView(
             snapshot: model.snapshot,
             height: .capped(fit.maxHeight),
+            update: updates.banner,
+            updateActions: updates.actions,
             onShowProviders: {
-                ProvidersMenu.make(model.providerItems, alerts: model.alertSettings, actions: ProvidersMenu.Actions(
+                ProvidersMenu.make(model.providerItems, alerts: model.alertSettings, updates: updates.menu(), actions: ProvidersMenu.Actions(
                     setEnabled: { model.setEnabled($0, for: $1) },
                     setInMenuBar: { model.setInMenuBar($0, for: $1) },
                     editKey: onEditKey,
@@ -226,7 +233,10 @@ private struct PopoverHost: View {
                     setAlerts: { model.setAlerts($0, for: $1) },
                     setThreshold: { model.setAlertThreshold($0) },
                     setLimitReached: { model.setLimitReachedAlerts($0) },
-                    setLimitReset: { model.setLimitResetAlerts($0) }
+                    setLimitReset: { model.setLimitResetAlerts($0) },
+                    setCheckForUpdates: { updates.setCheckAutomatically($0) },
+                    setInstallUpdates: { updates.setInstallAutomatically($0) },
+                    checkNow: { updates.checkNow() }
                 )).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
             },
             onRefresh: onRefresh,
