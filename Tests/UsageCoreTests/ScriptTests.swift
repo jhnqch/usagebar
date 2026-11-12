@@ -216,3 +216,95 @@ struct ReleaseScriptTests {
         #expect(!repo.hasTag("v1.2.3", in: repo.origin))
     }
 }
+
+@Suite("Build script", .serialized)
+struct BuildScriptTests {
+    /// A copy of the repo's build script and Info.plist in a temp folder, with
+    /// fake `swift` and `codesign` on PATH: `swift build` only notes that it
+    /// ran, and `--show-bin-path` points at two stand-in binaries. HOME is the
+    /// temp folder too, so nothing reaches the real `~/Applications`.
+    private struct Checkout {
+        let root: TempDirectory
+        var work: String { root.file("work") }
+        var buildLog: String { root.file("swift-log") }
+
+        init(buildInfo: String? = nil) throws {
+            root = try TempDirectory()
+            for script in ["build.sh", "build-info.sh"] {
+                let text = try String(contentsOfFile: "\(repoRoot)/scripts/\(script)", encoding: .utf8)
+                try root.write("work/scripts/\(script)", text, executable: true)
+            }
+            if let buildInfo { try root.write("work/scripts/build-info.sh", buildInfo, executable: true) }
+            let plist = try String(contentsOfFile: "\(repoRoot)/Packaging/Info.plist", encoding: .utf8)
+            try root.write("work/Packaging/Info.plist", plist)
+            try root.write("products/UsageBar", "#!/bin/sh\n", executable: true)
+            try root.write("products/usagebar-statusline", "#!/bin/sh\n", executable: true)
+            try root.write("bin/swift", """
+                #!/bin/sh
+                case " $* " in
+                  *" --show-bin-path "*) echo "\(root.file("products"))" ;;
+                  *) echo "swift $*" >> "\(buildLog)" ;;
+                esac
+                """, executable: true)
+            try root.write("bin/codesign", "#!/bin/sh\n", executable: true)
+        }
+
+        func build(app: String) -> CommandResult {
+            shell("/bin/bash", ["scripts/build.sh"], in: work,
+                  environment: ["PATH": root.file("bin") + ":/usr/bin:/bin", "HOME": root.path, "USAGEBAR_APP": app])
+        }
+
+        var built: Bool { FileManager.default.fileExists(atPath: buildLog) }
+    }
+
+    @Test("an absolute .app path is built, packaged and replaces the app there")
+    func packages() throws {
+        let checkout = try Checkout()
+        defer { checkout.root.remove() }
+        let app = checkout.root.file("Apps/UsageBar.app")
+        try checkout.root.write("Apps/UsageBar.app/Contents/Info.plist", "<plist/>")
+        try checkout.root.write("Apps/UsageBar.app/Contents/old", "previous build")
+        let result = checkout.build(app: app)
+        #expect(result.status == 0, "\(result.output)")
+        #expect(FileManager.default.isExecutableFile(atPath: app + "/Contents/MacOS/UsageBar"))
+        #expect(FileManager.default.isExecutableFile(atPath: app + "/Contents/Helpers/usagebar-statusline"))
+        #expect(!FileManager.default.fileExists(atPath: app + "/Contents/old"))
+    }
+
+    @Test("USAGEBAR_APP that isn't an absolute path to a .app is refused before building, deleting nothing",
+          arguments: ["Apps", "Apps/", "UsageBar.app", "./UsageBar.app", "Apps/UsageBar", "Apps/.app", "Apps/../Apps", "Apps/UsageBar.app/", "notes.app", "Docs.app"])
+    func refusesInstallPath(name: String) throws {
+        let checkout = try Checkout()
+        defer { checkout.root.remove() }
+        // Something to lose at each path the value could name.
+        try checkout.root.write("Apps/keep", "an unrelated file")
+        try checkout.root.write("Apps/UsageBar", "an unrelated file")
+        try checkout.root.write("work/UsageBar.app/keep", "an unrelated file")
+        try checkout.root.write("notes.app", "a file, not an app")
+        try checkout.root.write("Docs.app/keep", "a folder, not an app")
+        let app = name.hasPrefix(".") || name == "UsageBar.app" ? name : checkout.root.file(name) + (name.hasSuffix("/") ? "/" : "")
+        let result = checkout.build(app: app)
+        #expect(result.status != 0)
+        #expect(result.output.contains("USAGEBAR_APP"), "\(result.output)")
+        #expect(!checkout.built)
+        for kept in ["Apps/keep", "Apps/UsageBar", "work/UsageBar.app/keep", "notes.app", "Docs.app/keep"] {
+            #expect(FileManager.default.fileExists(atPath: checkout.root.file(kept)), "\(kept) was deleted")
+        }
+    }
+
+    @Test("a failing build-info.sh stops the build before the app is replaced")
+    func buildInfoFails() throws {
+        let checkout = try Checkout(buildInfo: "#!/bin/bash\necho 'build-info: broken' >&2\nexit 3\n")
+        defer { checkout.root.remove() }
+        let app = checkout.root.file("Apps/UsageBar.app")
+        try checkout.root.write("Apps/UsageBar.app/Contents/Info.plist", "<plist/>")
+        try checkout.root.write("Apps/UsageBar.app/Contents/old", "previous build")
+        let result = checkout.build(app: app)
+        #expect(result.status != 0)
+        #expect(result.output.contains("build-info: broken"))
+        #expect(!result.output.contains("Built "))
+        #expect(!checkout.built, "build-info.sh runs before the slow build")
+        #expect(FileManager.default.fileExists(atPath: app + "/Contents/old"))
+        #expect(!FileManager.default.fileExists(atPath: app + "/Contents/MacOS/UsageBar"))
+    }
+}
