@@ -37,7 +37,7 @@ UsageBar is built from source on the Mac that runs it. There's no signed downloa
    scripts/build.sh
    ```
 
-   `scripts/build.sh` builds a release binary and packages an ad-hoc-signed app at `~/Applications/UsageBar.app`. To put it somewhere else, set `USAGEBAR_APP=/some/path/UsageBar.app`. The app isn't notarised, which is why you build it on the Mac that runs it.
+   `scripts/build.sh` builds a release binary and packages an ad-hoc-signed app at `~/Applications/UsageBar.app`. To put it somewhere else, set `USAGEBAR_APP=/some/path/UsageBar.app` (an absolute path ending in `.app`; the script refuses anything else, since it replaces what is there). The app isn't notarised, which is why you build it on the Mac that runs it.
 3. Keep the clone where it is. The app records the clone's path and updates itself from it (step 8).
 
 ### 2. First launch

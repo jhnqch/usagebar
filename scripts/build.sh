@@ -12,10 +12,28 @@
 # `git describe --tags` version. The app checks that repo's latest release
 # and updates itself from that checkout. The installed app is replaced only
 # once everything has built and been signed.
+#
+# USAGEBAR_APP must be an absolute path ending in .app, and anything already
+# there must be an app bundle: the script replaces whatever is at that path,
+# so a folder or a relative path is refused before anything is built.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP="${USAGEBAR_APP:-$HOME/Applications/UsageBar.app}"
+refuse() {
+  echo "build: USAGEBAR_APP $1 (got '$APP'); it's replaced on install, so use e.g. /tmp/UsageBar.app" >&2
+  exit 1
+}
+[[ $APP == /* ]] || refuse "must be an absolute path"
+[[ $APP == *?.app && $APP != */.app ]] || refuse "must name an app bundle ending in .app"
+[[ /$APP/ != */./* && /$APP/ != */../* ]] || refuse "must not contain . or .. components"
+if [ -e "$APP" ] || [ -L "$APP" ]; then
+  [ -d "$APP" ] && [ ! -L "$APP" ] && [ -f "$APP/Contents/Info.plist" ] || refuse "names something that isn't an app bundle"
+fi
+
+# Where this build came from, for updates. Captured up front, not read from
+# a process substitution, so a failing build-info.sh stops the build.
+info="$(scripts/build-info.sh)"
 
 swift build -c release --product UsageBar
 swift build -c release --product usagebar-statusline
@@ -28,7 +46,6 @@ cp "$BIN_DIR/UsageBar" "$STAGE/Contents/MacOS/UsageBar"
 cp "$BIN_DIR/usagebar-statusline" "$STAGE/Contents/Helpers/usagebar-statusline"
 cp Packaging/Info.plist "$STAGE/Contents/Info.plist"
 
-# Where this build came from, for updates.
 version="" repository="" source=""
 while IFS='=' read -r key value; do
   case "$key" in
@@ -36,7 +53,7 @@ while IFS='=' read -r key value; do
     repository) repository="$value" ;;
     source) source="$value" ;;
   esac
-done < <(scripts/build-info.sh)
+done <<< "$info"
 PLIST="$STAGE/Contents/Info.plist"
 plutil -replace UsageBarVersion -string "$version" "$PLIST"
 plutil -replace UsageBarRepository -string "$repository" "$PLIST"
