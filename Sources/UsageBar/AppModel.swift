@@ -135,17 +135,20 @@ final class AppModel {
         refresh()
     }
 
-    /// Recomputes the snapshot against the current clock, and posts any alerts.
+    /// Recomputes the snapshot against the current clock, and posts any
+    /// alerts. The views and `onChange` hear of it only when it changed.
     func refresh() {
-        snapshot = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory,
-                                        selection: selection, alertSettings: alertSettings)
-        if snapshot.alertMemory != alertMemory {
-            alertMemory = snapshot.alertMemory
+        let updated = UsageEngine.snapshot(from: readings, now: Date(), timeZone: .current, alertMemory: alertMemory,
+                                           selection: selection, alertSettings: alertSettings)
+        if updated.alertMemory != alertMemory {
+            alertMemory = updated.alertMemory
             onAlertMemoryChange?(alertMemory)
         }
-        if !snapshot.alerts.isEmpty {
-            onAlerts?(snapshot.alerts)
+        if !updated.alerts.isEmpty {
+            onAlerts?(updated.alerts)
         }
+        guard updated != snapshot else { return }
+        snapshot = updated
         onChange?(snapshot)
     }
 
@@ -154,7 +157,8 @@ final class AppModel {
         ticker?.cancel()
         ticker = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: interval)
+                // A cancelled sleep throws: stop rather than refresh once more.
+                do { try await Task.sleep(for: interval) } catch { return }
                 self?.refresh()
                 self?.onTick?()
             }
@@ -187,8 +191,8 @@ struct ProviderEnvironment {
 /// The providers the app starts with, in display order, all empty: every
 /// reading is live. Claude's plan badge comes from Claude Code's saved login
 /// (`ClaudeUsageMonitor`).
-enum SampleReadings {
-    static func load() -> Readings {
+enum StartingReadings {
+    static func empty() -> Readings {
         Readings([ClaudeProvider(), CodexProvider()] + BuiltInProviders.keyAPIs.map { $0.emptyProvider })
     }
 }

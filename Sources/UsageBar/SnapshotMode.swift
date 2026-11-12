@@ -60,7 +60,7 @@ enum SnapshotMode {
         let scene: AnyView
         if let screenHeight {
             let cap = PopoverFit.maxHeight(visibleHeight: screenHeight)
-            print(measure(snapshot, cap: cap, screenHeight: screenHeight))
+            print(measure(snapshot, update: update, cap: cap, screenHeight: screenHeight))
             scene = AnyView(HStack(alignment: .top, spacing: 0) {
                 SnapshotScene(snapshot: snapshot, update: update, height: .cappedPreview(cap, atBottom: false), screenHeight: screenHeight)
                     .environment(\.colorScheme, .light)
@@ -126,14 +126,15 @@ enum SnapshotMode {
         try png.write(to: URL(fileURLWithPath: path))
     }
 
-    /// Lays out the popover the app shows, capped, in an offscreen window,
+    /// Lays out the popover the app shows, capped and with its update
+    /// banner, in an offscreen window,
     /// and reports its height and how far its scroll view scrolls.
     /// `ImageRenderer` can't draw a scroll view, so this is the check that
     /// the picture's clipping matches the real thing.
     @MainActor
-    private static func measure(_ snapshot: UsageSnapshot, cap: CGFloat, screenHeight: CGFloat) -> String {
+    private static func measure(_ snapshot: UsageSnapshot, update: UpdateBanner?, cap: CGFloat, screenHeight: CGFloat) -> String {
         func host(_ height: PopoverView.Height) -> NSHostingController<some View> {
-            let host = NSHostingController(rootView: PopoverView(snapshot: snapshot, height: height))
+            let host = NSHostingController(rootView: PopoverView(snapshot: snapshot, height: height, update: update))
             host.sizingOptions = .preferredContentSize
             return host
         }

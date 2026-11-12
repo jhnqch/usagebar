@@ -63,11 +63,6 @@ final class UpdateController {
         if updater.isCheckDue(at: Date()) { check() }
     }
 
-    /// "Check now" in the Updates menu.
-    func checkNow() {
-        check()
-    }
-
     func setCheckAutomatically(_ isOn: Bool) {
         updater.settings.checkAutomatically = isOn
         updater.settings.save(to: defaults)
@@ -79,7 +74,9 @@ final class UpdateController {
         updater.settings.save(to: defaults)
     }
 
-    private func check() {
+    /// Checks GitHub now: from `tick()` when one is due, and "Check now"
+    /// in the Updates menu.
+    func check() {
         guard let repository = updater.build.repository, updater.startCheck(at: Date()) else { return }
         let request = GitHubRelease.request(for: repository, userAgent: "UsageBar/\(updater.build.version?.base.description ?? "dev")")
         let transport = transport
