@@ -33,10 +33,19 @@ public struct CodexAppServerConversation: Sendable {
         }
     }
 
+    /// How long a request may go unanswered before app-server counts as
+    /// hung and is restarted.
+    public static let answerTimeout: TimeInterval = 30
+
     private let clientVersion: String
     private var nextID = 1
     private var initializeID: Int?
-    private var pendingReads: Set<Int> = []
+    /// When `initialize` was sent, until it's answered.
+    private var initializeSentAt: Date?
+    /// `initialize` came back with an error: the server will never be ready.
+    private var handshakeFailed = false
+    /// Unanswered reads and when each was sent.
+    private var pendingReads: [Int: Date] = [:]
     /// True once the `initialize` handshake has completed.
     public private(set) var isReady = false
 
@@ -44,17 +53,33 @@ public struct CodexAppServerConversation: Sendable {
         self.clientVersion = clientVersion
     }
 
-    /// The first line to send after starting the process: `initialize`.
-    public mutating func start() -> [Data] {
+    /// The first line to send after starting the process at `now`: `initialize`.
+    public mutating func start(at now: Date) -> [Data] {
         let id = takeID()
         initializeID = id
+        initializeSentAt = now
         return [encode(Outgoing(id: id, method: "initialize", params: InitializeParams(clientVersion: clientVersion)))]
     }
 
     /// Asks for a fresh reading. Sends nothing until the handshake completes
     /// (the handshake asks for one itself).
-    public mutating func requestRateLimits() -> [Data] {
-        isReady ? [readRequest()] : []
+    public mutating func requestRateLimits(at now: Date) -> [Data] {
+        isReady ? [readRequest(at: now)] : []
+    }
+
+    /// The method of a request app-server has left unanswered for
+    /// `answerTimeout` by `now`, or nil. A server that stops answering is
+    /// as good as dead: the caller restarts it. So is one that answered
+    /// `initialize` with an error, at once. A clock set back behind a
+    /// request counts as overdue too, rather than waiting out the gap.
+    public func overdueRequest(at now: Date) -> String? {
+        func overdue(_ sentAt: Date) -> Bool {
+            let waited = now.timeIntervalSince(sentAt)
+            return waited < 0 || waited >= Self.answerTimeout
+        }
+        if handshakeFailed { return "initialize" }
+        if let initializeSentAt, overdue(initializeSentAt) { return "initialize" }
+        return pendingReads.values.contains(where: overdue) ? "account/rateLimits/read" : nil
     }
 
     /// Handles one line of app-server's stdout, received at `now`.
@@ -83,22 +108,24 @@ public struct CodexAppServerConversation: Sendable {
         guard case let .number(number) = id else { return Step() }
         if number == initializeID {
             initializeID = nil
+            initializeSentAt = nil
             if let error = message.errorMessage {
+                handshakeFailed = true
                 return Step(failure: "initialize failed: \(error)")
             }
             isReady = true
-            return Step(send: [encode(Outgoing<Empty>(id: nil, method: "initialized", params: nil)), readRequest()])
+            return Step(send: [encode(Outgoing<Empty>(id: nil, method: "initialized", params: nil)), readRequest(at: now)])
         }
-        guard pendingReads.remove(number) != nil else { return Step() }
+        guard pendingReads.removeValue(forKey: number) != nil else { return Step() }
         if let error = message.errorMessage {
             return Step(failure: "account/rateLimits/read failed: \(error)")
         }
         return Step(reading: Reading(message.readResult?.codexBucket?.codexLimits(capturedAt: now)))
     }
 
-    private mutating func readRequest() -> Data {
+    private mutating func readRequest(at now: Date) -> Data {
         let id = takeID()
-        pendingReads.insert(id)
+        pendingReads[id] = now
         return encode(Outgoing(id: id, method: "account/rateLimits/read", params: ReadParams()))
     }
 
@@ -278,25 +305,44 @@ struct AppServerRateLimits: Decodable {
     }
 }
 
-/// How long to wait before restarting app-server after it exits: doubling
-/// from `initial` up to `maximum`, back to `initial` once it's healthy.
+/// How long to wait before restarting app-server after it exits (or fails
+/// to launch): doubling from `initial` up to `maximum`, and back to
+/// `initial` only once a server has answered and then stayed up for
+/// `healthyAfter`. A server that answers once and exits right after keeps
+/// doubling, so it isn't relaunched every second.
 public struct RestartBackoff: Sendable {
     private let initial: Duration
     private let maximum: Duration
+    private let healthyAfter: TimeInterval
     private var next: Duration
+    /// When the running server first gave a reading.
+    private var firstAnswer: Date?
 
-    public init(initial: Duration = .seconds(1), maximum: Duration = .seconds(300)) {
+    public init(initial: Duration = .seconds(1), maximum: Duration = .seconds(300), healthyAfter: TimeInterval = 60) {
         self.initial = initial
         self.maximum = maximum
+        self.healthyAfter = healthyAfter
         next = initial
     }
 
-    public mutating func nextDelay() -> Duration {
+    /// A server was launched at `now`.
+    public mutating func launched(at now: Date) {
+        firstAnswer = nil
+    }
+
+    /// The running server gave a reading at `now`.
+    public mutating func answered(at now: Date) {
+        if firstAnswer == nil { firstAnswer = now }
+    }
+
+    /// The server exited (or failed to launch) at `now`: the wait before
+    /// launching the next one.
+    public mutating func nextDelay(exitedAt now: Date) -> Duration {
+        if let firstAnswer, now.timeIntervalSince(firstAnswer) >= healthyAfter {
+            next = initial
+        }
+        firstAnswer = nil
         defer { next = min(next * 2, maximum) }
         return next
-    }
-
-    public mutating func reset() {
-        next = initial
     }
 }

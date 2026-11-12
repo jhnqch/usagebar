@@ -280,7 +280,7 @@ The cost chart reads Claude Code's transcripts in `~/.claude/projects` and price
 
 ### Codex
 
-UsageBar shows Codex once `~/.codex` (or `$CODEX_HOME`) exists or a `codex` binary is installed, including the one bundled in the ChatGPT app. It runs `codex app-server` and asks it for the rate limits, which it then pushes live. If app-server isn't available, the latest limits from Codex's session logs in `~/.codex/sessions` stand in. Set `USAGEBAR_CODEX` to the path of a `codex` binary to choose which one is used.
+UsageBar shows Codex once `~/.codex` (or `$CODEX_HOME`) exists or a `codex` binary is installed, including the one bundled in the ChatGPT app. It runs `codex app-server` and asks it for the rate limits, which it then pushes live. If app-server isn't available, the latest limits from Codex's session logs in `~/.codex/sessions` stand in. When both have limits, each window shows the fresher of the two that can be read. Set `USAGEBAR_CODEX` to the path of a `codex` binary to choose which one is used.
 
 The cost chart reads the same session logs and prices them at OpenAI's API rates.
 

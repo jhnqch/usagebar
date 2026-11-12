@@ -67,4 +67,74 @@ struct CodexSourcesTests {
         #expect(section.codex.meters.map(\.percentText) == ["—"])
         #expect(section.menuBar.codex.text == "—")
     }
+    // MARK: Merging per window
+
+    let weekResets = date("2026-10-15T13:16:00-07:00")
+    let fiveHourResets = date("2026-10-10T17:00:00-07:00")
+
+    func limits(plan: String?, at time: Date, fiveHour: Double?, weekly: Double?) -> CodexLimits {
+        CodexLimits(plan: plan, capturedAt: time, windows: [
+            CodexWindow(windowMinutes: 300, reading: fiveHour.map { LimitReading(usedPercent: $0, resetsAt: fiveHourResets) }),
+            CodexWindow(windowMinutes: 10080, reading: weekly.map { LimitReading(usedPercent: $0, resetsAt: weekResets) }),
+        ])
+    }
+
+    @Test("a newer session-log record with one unreadable window keeps app-server's value for that window, and the plan")
+    func mergesPerWindow() {
+        let appServer = limits(plan: "pro", at: now - 120, fiveHour: 20, weekly: 40)
+        let log = limits(plan: nil, at: now - 10, fiveHour: nil, weekly: 45)
+        let section = snapshot(codex: appServer, codexSessionLog: log)
+        #expect(section.codex.meters.map(\.label) == ["5-hour session", "Weekly"])
+        #expect(section.codex.meters.map(\.percentText) == ["20%", "45%"])
+        #expect(section.codex.plan == "Pro")
+    }
+
+    @Test("a newer app-server reading with one unreadable window keeps the session log's value for it")
+    func mergesPerWindowTheOtherWay() {
+        let appServer = limits(plan: nil, at: now - 10, fiveHour: 25, weekly: nil)
+        let log = limits(plan: "plus", at: now - 120, fiveHour: 20, weekly: 40)
+        let section = snapshot(codex: appServer, codexSessionLog: log)
+        #expect(section.codex.meters.map(\.percentText) == ["25%", "40%"])
+        #expect(section.codex.plan == "Plus")
+    }
+
+    @Test("with both readable, the fresher source wins each window and the plan")
+    func fresherWinsEachWindow() {
+        let appServer = limits(plan: "plus", at: now - 120, fiveHour: 20, weekly: 40)
+        let log = limits(plan: "pro", at: now - 10, fiveHour: 22, weekly: 41)
+        let section = snapshot(codex: appServer, codexSessionLog: log)
+        #expect(section.codex.meters.map(\.percentText) == ["22%", "41%"])
+        #expect(section.codex.plan == "Pro")
+        #expect(section.codex.updatedText == "Updated just now")
+    }
+
+    @Test("the fresher source says which windows there are: one only the older source reports is dropped")
+    func fresherSetsWindows() {
+        let appServer = CodexLimits(plan: "pro", capturedAt: now - 120, windows: [
+            CodexWindow(windowMinutes: 300, reading: LimitReading(usedPercent: 20, resetsAt: fiveHourResets)),
+            CodexWindow(windowMinutes: 10080, reading: LimitReading(usedPercent: 40, resetsAt: weekResets)),
+        ])
+        let log = CodexLimits(plan: "pro", capturedAt: now - 10, windows: [
+            CodexWindow(windowMinutes: 10080, reading: LimitReading(usedPercent: 45, resetsAt: weekResets)),
+        ])
+        let section = snapshot(codex: appServer, codexSessionLog: log)
+        #expect(section.codex.meters.map(\.label) == ["Weekly"])
+        #expect(section.codex.meters.map(\.percentText) == ["45%"])
+    }
+
+    @Test("a fresher source with no windows at all leaves the other source's windows")
+    func fresherWithoutWindows() {
+        let appServer = limits(plan: "pro", at: now - 120, fiveHour: 20, weekly: 40)
+        let log = CodexLimits(plan: nil, capturedAt: now - 10, windows: [])
+        let section = snapshot(codex: appServer, codexSessionLog: log)
+        #expect(section.codex.meters.map(\.percentText) == ["20%", "40%"])
+        #expect(section.codex.plan == "Pro")
+    }
+
+    @Test("a window neither source can read shows a dash")
+    func windowNeitherReads() {
+        let appServer = limits(plan: "pro", at: now - 120, fiveHour: nil, weekly: 40)
+        let log = limits(plan: "pro", at: now - 10, fiveHour: nil, weekly: 45)
+        #expect(snapshot(codex: appServer, codexSessionLog: log).codex.meters.map(\.percentText) == ["—", "45%"])
+    }
 }

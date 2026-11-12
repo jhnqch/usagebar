@@ -4,20 +4,19 @@ import UsageCore
 
 /// Keeps the model's usage-endpoint reading current: asks Claude's usage
 /// endpoint every 5 minutes, and when the popover opens at most once a
-/// minute. `ClaudeUsagePolling` decides when to ask and what each answer
-/// does; this only reads the Keychain, makes the request and reports back.
+/// minute. `ClaudeUsagePoller` decides when to ask, what each answer does
+/// and when to read the login again; this only reads the Keychain, makes the
+/// request and reports back.
 ///
 /// The token is read-only. It comes from Claude Code's Keychain item through
 /// `/usr/bin/security`, stays in memory between polls, and goes only into
 /// the request's `Authorization` header. It's never logged, written,
-/// forwarded or refreshed. After a refused login it's read again at the next
-/// poll, by when Claude Code may have refreshed it.
+/// forwarded or refreshed. After a refused login it's read again at once,
+/// in case Claude Code has rotated it, and otherwise at the next poll.
 @MainActor
 final class ClaudeUsageMonitor {
     private let model: AppModel
-    private var polling = ClaudeUsagePolling()
-    private var token: String?
-    private var inFlight = false
+    private let poller: ClaudeUsagePoller
     private var loop: Task<Void, Never>?
     /// Between `start()` and `stop()`. While stopped (Claude turned off)
     /// nothing reads the Keychain or asks the endpoint.
@@ -37,6 +36,11 @@ final class ClaudeUsageMonitor {
         configuration.urlCredentialStorage = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         session = URLSession(configuration: configuration)
+        poller = ClaudeUsagePoller(
+            readLogin: { await Self.readLogin() },
+            fetch: { [session] token in await Self.fetch(token, session: session) },
+            log: { [log] line in log.info("Claude usage endpoint: \(line, privacy: .public)") }
+        )
     }
 
     func start() {
@@ -63,44 +67,25 @@ final class ClaudeUsageMonitor {
         running = false
         loop?.cancel()
         loop = nil
-        token = nil
+        poller.stop()
         session.getAllTasks { tasks in tasks.forEach { $0.cancel() } }
     }
 
     private func poll(_ trigger: ClaudeUsagePolling.Trigger) async {
-        guard running, !inFlight, polling.isDue(trigger, at: Date()) else { return }
-        inFlight = true
-        defer { inFlight = false }
-        polling.start(at: Date())
-
-        if token == nil {
-            let login = await Self.readLogin()
-            token = login?.token
-            // The plan badge comes from the same saved login (the tokens
-            // stay here); with no readable login there's no badge.
-            if running {
-                model.update(ClaudeProvider.self) { $0.plan = login?.plan }
-            }
-        }
-        // Turned off while the Keychain answered.
-        guard running else {
-            token = nil
-            return
-        }
-        let outcome: ClaudeUsagePolling.Outcome = if let token { await fetch(token) } else { .noCredentials }
-        guard running else { return }
-        let finished = polling.finish(outcome, at: Date())
-        if finished.rereadToken {
-            token = nil
-        }
-
-        let reading = polling.reading
+        guard running, await poller.poll(trigger), running else { return }
+        let reading = poller.reading
         let windows = [reading?.fiveHour.map { _ in "5h" }, reading?.sevenDay.map { _ in "wk" }, reading?.sevenDayFable.map { _ in "Fable" }]
-        log.info("Claude usage endpoint: \(finished.summary, privacy: .public); windows: \(windows.compactMap(\.self), privacy: .public)")
-        model.update(ClaudeProvider.self) { $0.endpoint = reading }
+        log.info("Claude usage endpoint windows: \(windows.compactMap(\.self), privacy: .public)")
+        // The plan badge comes from the same saved login (the tokens stay
+        // in the poller); with no readable login there's no badge.
+        let plan = poller.plan
+        model.update(ClaudeProvider.self) {
+            $0.plan = plan
+            $0.endpoint = reading
+        }
     }
 
-    private func fetch(_ token: String) async -> ClaudeUsagePolling.Outcome {
+    private nonisolated static func fetch(_ token: String, session: URLSession) async -> PollOutcome {
         let request = ClaudeUsageEndpoint.request(accessToken: token, userAgent: "UsageBar/\(Self.appVersion)")
         do {
             let (body, response) = try await session.data(for: request, delegate: RefuseRedirects())
@@ -115,7 +100,7 @@ final class ClaudeUsageMonitor {
     /// The access token and plan from Claude Code's Keychain item, or nil.
     /// Reading it can show a macOS Keychain prompt; this waits for the
     /// answer off the main thread.
-    private nonisolated static func readLogin() async -> (token: String?, plan: String?)? {
+    private nonisolated static func readLogin() async -> ClaudeLogin? {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 let process = Process()
@@ -137,14 +122,14 @@ final class ClaudeUsageMonitor {
                     continuation.resume(returning: nil)
                     return
                 }
-                continuation.resume(returning: (
-                    ClaudeUsageEndpoint.accessToken(fromSecret: secret), ClaudeUsageEndpoint.plan(fromSecret: secret)
+                continuation.resume(returning: ClaudeLogin(
+                    token: ClaudeUsageEndpoint.accessToken(fromSecret: secret), plan: ClaudeUsageEndpoint.plan(fromSecret: secret)
                 ))
             }
         }
     }
 
-    private static var appVersion: String {
+    private nonisolated static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
     }
 }

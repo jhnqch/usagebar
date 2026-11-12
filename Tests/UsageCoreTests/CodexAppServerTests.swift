@@ -55,11 +55,11 @@ struct CodexAppServerTests {
     func unusableReadDropsReading() throws {
         let lines = try fixtureLines("codex/app-server.jsonl")
         var conversation = CodexAppServerConversation()
-        _ = conversation.start()
+        _ = conversation.start(at: received)
         _ = conversation.receive(lines[0], at: received)
         let first = conversation.receive(lines[2], at: received).reading
         #expect(first.map { if case .updated = $0 { true } else { false } } == true)
-        _ = conversation.requestRateLimits()
+        _ = conversation.requestRateLimits(at: received)
         // The next read answers in a format whose window lengths we can't find.
         let renamed = String(decoding: lines[2], as: UTF8.self)
             .replacingOccurrences(of: #"{"id":2,"#, with: #"{"id":3,"#)
@@ -91,10 +91,10 @@ struct CodexAppServerTests {
     @Test("reads wait for the handshake")
     func readsWaitForHandshake() throws {
         var conversation = CodexAppServerConversation()
-        _ = conversation.start()
-        #expect(conversation.requestRateLimits().isEmpty)
+        _ = conversation.start(at: received)
+        #expect(conversation.requestRateLimits(at: received).isEmpty)
         _ = conversation.receive(try fixtureLines("codex/app-server.jsonl")[0], at: received)
-        #expect(conversation.requestRateLimits().count == 1)
+        #expect(conversation.requestRateLimits(at: received).count == 1)
     }
 
     @Test("a read that fails is reported and gives no reading")
@@ -107,20 +107,122 @@ struct CodexAppServerTests {
     }
 }
 
+@Suite("app-server watchdog")
+struct AppServerWatchdogTests {
+    let launched = date("2026-10-10T21:57:00-07:00")
+
+    func ready() throws -> CodexAppServerConversation {
+        var conversation = CodexAppServerConversation()
+        _ = conversation.start(at: launched)
+        _ = conversation.receive(try fixtureLines("codex/app-server.jsonl")[0], at: launched + 1)
+        _ = conversation.receive(try fixtureLines("codex/app-server.jsonl")[2], at: launched + 2)
+        return conversation
+    }
+
+    @Test("a server that never answers initialize is overdue after 30 seconds")
+    func handshakeOverdue() {
+        var conversation = CodexAppServerConversation()
+        _ = conversation.start(at: launched)
+        #expect(conversation.overdueRequest(at: launched + 29) == nil)
+        #expect(conversation.overdueRequest(at: launched + 30) == "initialize")
+    }
+
+    @Test("a server that answers initialize with an error is overdue at once, so it's restarted")
+    func handshakeFailed() {
+        var conversation = CodexAppServerConversation()
+        _ = conversation.start(at: launched)
+        _ = conversation.receive(Data(#"{"id":1,"error":{"code":-32600,"message":"bad client"}}"#.utf8), at: launched + 1)
+        #expect(conversation.overdueRequest(at: launched + 1) == "initialize")
+    }
+
+    @Test("an answered conversation has nothing overdue")
+    func answered() throws {
+        #expect(try ready().overdueRequest(at: launched + 3600) == nil)
+    }
+
+    @Test("an unanswered rate-limit read is overdue after 30 seconds, so the server is restarted")
+    func readOverdue() throws {
+        var conversation = try ready()
+        let asked = launched + 300
+        #expect(conversation.requestRateLimits(at: asked).count == 1)
+        #expect(conversation.overdueRequest(at: asked + 29) == nil)
+        #expect(conversation.overdueRequest(at: asked + 30) == "account/rateLimits/read")
+    }
+
+    @Test("the handshake's own read times out too")
+    func handshakeReadOverdue() throws {
+        var conversation = CodexAppServerConversation()
+        _ = conversation.start(at: launched)
+        _ = conversation.receive(try fixtureLines("codex/app-server.jsonl")[0], at: launched + 1)
+        #expect(conversation.overdueRequest(at: launched + 30) == nil)
+        #expect(conversation.overdueRequest(at: launched + 31) == "account/rateLimits/read")
+    }
+
+    @Test("a read that comes back with an error isn't overdue")
+    func errorAnswers() throws {
+        var conversation = try ready()
+        _ = conversation.requestRateLimits(at: launched + 300)
+        _ = conversation.receive(Data(#"{"id":3,"error":{"code":-32600,"message":"not logged in"}}"#.utf8), at: launched + 301)
+        #expect(conversation.overdueRequest(at: launched + 400) == nil)
+    }
+
+    @Test("a clock set back while a read is pending counts as overdue rather than waiting out the gap")
+    func clockSetBack() throws {
+        var conversation = try ready()
+        _ = conversation.requestRateLimits(at: launched + 300)
+        #expect(conversation.overdueRequest(at: launched - 3600) == "account/rateLimits/read")
+    }
+}
+
 @Suite("app-server restarts")
 struct RestartBackoffTests {
+    let start = date("2026-10-10T21:57:00-07:00")
+
     @Test("restart delays double from 1 second up to 5 minutes")
     func doubling() {
         var backoff = RestartBackoff()
-        let delays = (0..<11).map { _ in backoff.nextDelay() }
+        let delays = (0..<11).map { _ in backoff.nextDelay(exitedAt: start) }
         #expect(delays == [1, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300].map { Duration.seconds($0) })
     }
 
-    @Test("after a healthy reading, the next restart is quick again")
-    func resetsAfterSuccess() {
+    @Test("a server that exits shortly after each first reading is relaunched with growing delays")
+    func exitsAfterFirstReading() {
         var backoff = RestartBackoff()
-        _ = (0..<5).map { _ in backoff.nextDelay() }
-        backoff.reset()
-        #expect(backoff.nextDelay() == .seconds(1))
+        var time = start
+        var delays: [Duration] = []
+        for _ in 0..<5 {
+            backoff.launched(at: time)
+            backoff.answered(at: time + 0.5)
+            delays.append(backoff.nextDelay(exitedAt: time + 1))
+            time += 1 + Double(delays.last!.components.seconds)
+        }
+        #expect(delays == [1, 2, 4, 8, 16].map { Duration.seconds($0) })
+    }
+
+    @Test("a server that answered and stayed up a minute restarts quickly again")
+    func resetsAfterHealthyRun() {
+        var backoff = RestartBackoff()
+        _ = (0..<5).map { _ in backoff.nextDelay(exitedAt: start) }
+        backoff.launched(at: start)
+        backoff.answered(at: start + 1)
+        #expect(backoff.nextDelay(exitedAt: start + 61) == .seconds(1))
+        #expect(backoff.nextDelay(exitedAt: start + 62) == .seconds(2))
+    }
+
+    @Test("a server that stays up but never answers doesn't reset the back-off")
+    func upButSilent() {
+        var backoff = RestartBackoff()
+        _ = (0..<3).map { _ in backoff.nextDelay(exitedAt: start) }
+        backoff.launched(at: start)
+        #expect(backoff.nextDelay(exitedAt: start + 600) == .seconds(8))
+    }
+
+    @Test("a server whose first answer came less than a minute before it exited doesn't reset the back-off, however long it ran")
+    func lateFirstAnswer() {
+        var backoff = RestartBackoff()
+        _ = (0..<3).map { _ in backoff.nextDelay(exitedAt: start) }
+        backoff.launched(at: start)
+        backoff.answered(at: start + 590)
+        #expect(backoff.nextDelay(exitedAt: start + 600) == .seconds(8))
     }
 }

@@ -1,9 +1,11 @@
 import Foundation
 import OSLog
+import ProcessRunner
 import UsageCore
 
 /// Runs `codex app-server` as a child process and holds the JSON-RPC
-/// conversation with it over stdio. Restarts it with backoff when it exits.
+/// conversation with it over stdio. Restarts it with backoff when it exits,
+/// and restarts it when it leaves a request unanswered.
 ///
 /// app-server is Codex's own process and refreshes Codex's login itself.
 /// UsageBar never reads `~/.codex/auth.json`.
@@ -51,7 +53,7 @@ final class CodexAppServerProcess {
 
     /// Asks for a fresh reading; a no-op until the handshake completes.
     func requestRateLimits() {
-        send(conversation.requestRateLimits())
+        send(conversation.requestRateLimits(at: Date()))
     }
 
     /// Ends the child process and stops restarting it. Gives it a second
@@ -67,12 +69,9 @@ final class CodexAppServerProcess {
         self.process = nil
         try? stdin?.close()
         stdin = nil
-        if process.isRunning { process.terminate() }
         let child = process
         let finish: @Sendable () -> Void = { [log] in
-            let deadline = Date().addingTimeInterval(1)
-            while child.isRunning, Date() < deadline { usleep(10_000) }
-            if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+            ChildProcess.end(child, grace: 1)
             log.info("app-server stopped")
         }
         if wait {
@@ -110,19 +109,33 @@ final class CodexAppServerProcess {
         }
         self.process = process
         stdin = input.fileHandleForWriting
+        backoff.launched(at: Date())
         log.info("app-server started, pid \(process.processIdentifier)")
         readLines(from: output.fileHandleForReading, generation: generation)
-        send(conversation.start())
+        send(conversation.start(at: Date()))
+        watch(process, generation: generation)
+    }
 
-        // A server that never answers `initialize` is as good as dead.
+    /// A server that leaves `initialize` or a read unanswered is as good as
+    /// dead: end it (SIGTERM, then SIGKILL after a second, as `stop()`
+    /// does), and its exit schedules the restart.
+    private func watch(_ child: Process, generation: Int) {
         watchdog?.cancel()
         watchdog = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(30))
-            guard let self, !Task.isCancelled, self.generation == generation, !self.conversation.isReady else { return }
-            self.log.error("app-server didn't finish the handshake; restarting it")
-            self.process?.terminate()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.watchdogTick)
+                guard let self, !Task.isCancelled, self.generation == generation else { return }
+                if let overdue = self.conversation.overdueRequest(at: Date()) {
+                    self.log.error("app-server left \(overdue, privacy: .public) unanswered; restarting it")
+                    DispatchQueue.global(qos: .utility).async { ChildProcess.end(child, grace: 1) }
+                    return
+                }
+            }
         }
     }
+
+    /// How often the watchdog checks for an unanswered request.
+    private static let watchdogTick: Duration = .seconds(5)
 
     /// Reads stdout on a background queue and hands complete lines to the
     /// main actor in order.
@@ -166,7 +179,7 @@ final class CodexAppServerProcess {
             }
             switch step.reading {
             case let .updated(limits):
-                backoff.reset()
+                backoff.answered(at: Date())
                 log.info("Codex limits from app-server: \(limits.windows.map { "\($0.windowMinutes)m" }, privacy: .public)")
                 onReading?(limits)
             case .unusable:
@@ -199,7 +212,7 @@ final class CodexAppServerProcess {
 
     private func scheduleRestart() {
         guard !stopped else { return }
-        let delay = backoff.nextDelay()
+        let delay = backoff.nextDelay(exitedAt: Date())
         log.info("restarting app-server in \(delay.components.seconds)s")
         restart?.cancel()
         restart = Task { [weak self] in

@@ -12,7 +12,8 @@ public struct CodexProvider: Provider {
     public var appServer: CodexLimits?
     /// The latest Codex record in the session logs: the fallback when
     /// app-server isn't available, and fresher whenever another Codex
-    /// process ran a turn since app-server last reported.
+    /// process ran a turn since app-server last reported. The two are
+    /// merged window by window.
     public var sessionLog: CodexLimits?
     /// Codex's responses from its rollout files, one per response: the
     /// Codex cost chart.
@@ -29,7 +30,7 @@ public struct CodexProvider: Provider {
     private static let fiveHourMinutes = 5 * 60
 
     public func report(clock: Clock) -> ProviderReport {
-        let codex = fresher(appServer, sessionLog)
+        let codex = Self.merged(appServer, sessionLog)
         var windows = (codex?.windows ?? [])
             .sorted { $0.windowMinutes < $1.windowMinutes }
             .map { Self.window($0.windowMinutes, reading: $0.reading) }
@@ -49,10 +50,23 @@ public struct CodexProvider: Provider {
         )
     }
 
-    /// Whichever reading was taken later; app-server on a tie.
-    private func fresher(_ appServer: CodexLimits?, _ sessionLog: CodexLimits?) -> CodexLimits? {
+    /// Both sources merged window by window. The fresher source (app-server
+    /// on a tie) says which windows there are, since a plan's windows can
+    /// change; a window it can't read takes the other source's value for
+    /// the same length, and a missing plan the other's plan. So a newer
+    /// record with one unreadable window (or no plan) doesn't blank a good
+    /// value from the other source. With no windows at all, the other
+    /// source's stand.
+    private static func merged(_ appServer: CodexLimits?, _ sessionLog: CodexLimits?) -> CodexLimits? {
         guard let appServer, let sessionLog else { return appServer ?? sessionLog }
-        return (sessionLog.capturedAt ?? .distantPast) > (appServer.capturedAt ?? .distantPast) ? sessionLog : appServer
+        let logIsFresher = (sessionLog.capturedAt ?? .distantPast) > (appServer.capturedAt ?? .distantPast)
+        let (fresh, other) = logIsFresher ? (sessionLog, appServer) : (appServer, sessionLog)
+        let windows = (fresh.windows.isEmpty ? other.windows : fresh.windows).map { window in
+            guard window.reading == nil else { return window }
+            let fallback = other.windows.first { $0.windowMinutes == window.windowMinutes && $0.reading != nil }?.reading
+            return CodexWindow(windowMinutes: window.windowMinutes, reading: fallback)
+        }
+        return CodexLimits(plan: fresh.plan ?? other.plan, capturedAt: fresh.capturedAt ?? other.capturedAt, windows: windows)
     }
 
     /// A window of `minutes`, labelled and named for alerts by its length.
@@ -117,7 +131,7 @@ extension CodexProvider {
         /// The reading the app would hold after these messages.
         var limits: CodexLimits? {
             var conversation = CodexAppServerConversation()
-            _ = conversation.start()
+            _ = conversation.start(at: receivedAt)
             return messages.compactMap(\.value).reduce(nil) { latest, message in
                 switch conversation.receive(message, at: receivedAt).reading {
                 case let .updated(limits): limits
