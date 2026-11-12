@@ -222,7 +222,7 @@ public struct UpdateRunner: Sendable {
 /// copy into its place (putting the old one back if that fails), and opens
 /// whichever is there. A failed copy leaves the installed app as it was;
 /// when the old one can't be put back either, it's kept where it was set
-/// aside (`<app>.previous`) and opened from there.
+/// aside (`UsageBar.previous.app` beside it) and opened from there.
 ///
 /// The reopened app can't see the helper's exit status, so the helper
 /// writes the release's tag to `statusFile` before the copy and removes it
@@ -250,8 +250,11 @@ public enum Relaunch {
     static let script = """
     pid="$1"; new="$2"; app="$3"; opener="$4"; tag="$5"; status_file="$6"
     while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
-    next="$app.new"; old="$app.previous"
-    rm -rf "$next" "$old"
+    # The set-aside copy keeps a .app name: should it end up the only copy
+    # left, it still opens as an app and can update itself again.
+    next="$app.new"; old="${app%.app}.previous.app"
+    # "$app.previous" is where the helper in v1.0.1 and earlier set it aside.
+    rm -rf "$next" "$old" "$app.previous"
     # Written first and removed only once the swap works: a disk too full
     # to copy the app may have no room for it afterwards.
     printf '%s\\n' "$tag" > "$status_file"

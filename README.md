@@ -176,10 +176,10 @@ These steps remove everything UsageBar creates. Run the commands in Terminal.
 5. **The app:**
 
    ```sh
-   rm -rf ~/Applications/UsageBar.app ~/Applications/UsageBar.app.new ~/Applications/UsageBar.app.previous
+   rm -rf ~/Applications/UsageBar.app ~/Applications/UsageBar.app.new ~/Applications/UsageBar.previous.app ~/Applications/UsageBar.app.previous
    ```
 
-   (The `.new` and `.previous` copies exist only if an update was interrupted while swapping the app, or couldn't put the old app back: then it opens from `.previous`. If you set `USAGEBAR_APP`, use that path.)
+   (The `.new` and `.previous` copies exist only if an update was interrupted while swapping the app, or couldn't put the old app back: then it opens from `UsageBar.previous.app`. If you set `USAGEBAR_APP`, use that path.)
 6. **Keychain items** left over from step 1. Each saved key is a generic password with the service `io.github.jhnqch.usagebar.api-key`, one per provider. This deletes them all (macOS may ask for your password):
 
    ```sh

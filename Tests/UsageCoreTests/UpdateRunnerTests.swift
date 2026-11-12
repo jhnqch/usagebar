@@ -419,6 +419,11 @@ struct RelaunchTests {
         (try? String(contentsOfFile: statusFile, encoding: .utf8)).flatMap(Relaunch.failedTag(status:))
     }
 
+    /// Where the helper sets the installed app aside during the swap.
+    private func previous(_ app: String) -> String {
+        (app as NSString).deletingPathExtension + ".previous.app"
+    }
+
     private func build(_ app: String) -> String? {
         try? String(contentsOfFile: app + "/Contents/build", encoding: .utf8)
     }
@@ -451,7 +456,7 @@ struct RelaunchTests {
         #expect(result.status == 0, "\(result.output)")
         #expect(build(app) == "new")
         #expect(!FileManager.default.fileExists(atPath: staged))
-        #expect(!FileManager.default.fileExists(atPath: app + ".previous"))
+        #expect(!FileManager.default.fileExists(atPath: previous(app)))
         #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + "\n")
         #expect(failedTag(dir.file("update-failed")) == nil)
     }
@@ -464,7 +469,8 @@ struct RelaunchTests {
         try makeApp(app, "old")
         try makeApp(staged, "new")
         try makeApp(app + ".new", "half-copied")
-        try makeApp(app + ".previous", "older")
+        try makeApp(previous(app), "older")
+        try makeApp(app + ".previous", "from an older helper")
         try dir.write("open", "#!/bin/sh\nexit 0\n", executable: true)
         let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, tag: "v1.1.0", statusFile: dir.file("update-failed"),
                                        opener: dir.file("open"))
@@ -472,6 +478,7 @@ struct RelaunchTests {
         #expect(result.status == 0, "\(result.output)")
         #expect(build(app) == "new")
         #expect(!FileManager.default.fileExists(atPath: app + ".new"))
+        #expect(!FileManager.default.fileExists(atPath: previous(app)))
         #expect(!FileManager.default.fileExists(atPath: app + ".previous"))
     }
 
@@ -535,9 +542,11 @@ struct RelaunchTests {
                            environment: ["PATH": dir.file("bin") + ":/usr/bin:/bin"])
         #expect(result.status != 0)
         #expect(!FileManager.default.fileExists(atPath: app))
-        #expect(build(app + ".previous") == "old")
-        #expect(result.output.contains(app + ".previous"), "\(result.output)")
-        #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + ".previous\n")
+        // Still an app bundle by name, so `open` launches it and it can update itself again.
+        #expect(build(previous(app)) == "old")
+        #expect(previous(app).hasSuffix("/UsageBar.previous.app"))
+        #expect(result.output.contains(previous(app)), "\(result.output)")
+        #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == previous(app) + "\n")
         #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
         #expect(FileManager.default.fileExists(atPath: staged))
     }
