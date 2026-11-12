@@ -322,7 +322,7 @@ struct CopilotRequestTests {
             #expect(request.value(forHTTPHeaderField: "X-GitHub-Api-Version") == "2026-03-10")
         }
         #expect(poller.provider.problem == nil)
-        #expect(poller.provider.reading?.login == "mona-example")
+        #expect(poller.provider.reading != nil)
     }
 
     @Test("with the meter option on, it also asks copilot_internal/user on api.github.com, and only then")

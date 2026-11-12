@@ -80,7 +80,7 @@ public protocol KeyAPI: Sendable {
 }
 
 /// A choice a key provider offers in the Providers menu, off by default:
-/// GitHub Copilot's "Premium requests meter", which reads an undocumented
+/// GitHub Copilot's "Quota meter and plan", which reads an undocumented
 /// endpoint.
 public struct KeyOption: Equatable, Sendable {
     /// Stable: names the saved setting.
@@ -143,7 +143,6 @@ public struct KeyClient: Sendable {
     public let startedAt: Date
     /// The ids of the provider's `options` the user turned on.
     public let options: Set<String>
-    private let key: String
     private let hosts: Set<String>
     private let authorization: String
     private let userAgent: String
@@ -152,7 +151,6 @@ public struct KeyClient: Sendable {
     init<API: KeyAPI>(_ api: API.Type, key: String, transport: any HTTPTransport, userAgent: String, startedAt: Date, options: Set<String> = []) {
         self.startedAt = startedAt
         self.options = options
-        self.key = key
         hosts = Set(API.hosts.map { $0.lowercased() })
         authorization = API.authorization(key: key)
         self.userAgent = userAgent

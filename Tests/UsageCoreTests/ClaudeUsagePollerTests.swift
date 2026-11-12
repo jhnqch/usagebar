@@ -47,7 +47,7 @@ struct ClaudeUsagePollerTests {
         var time = start
         let poller = claude.poller(now: { time })
         #expect(await poller.poll(.timer))
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         #expect(await poller.poll(.timer))
         #expect(claude.keychainReads == 1)
         #expect(claude.sentTokens == ["fake-token-1", "fake-token-1"])
@@ -65,13 +65,13 @@ struct ClaudeUsagePollerTests {
         // Claude Code rotated its token: the old one is refused.
         claude.statuses["fake-token-1"] = 401
         claude.login = ClaudeLogin(token: "fake-token-2", plan: "max")
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         #expect(await poller.poll(.timer))
         #expect(claude.sentTokens == ["fake-token-1", "fake-token-1", "fake-token-2"])
         #expect(claude.keychainReads == 2)
         #expect(poller.reading != nil)
         // The newer token is kept for the next poll.
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         await poller.poll(.timer)
         #expect(claude.sentTokens.last == "fake-token-2")
         #expect(claude.keychainReads == 2)
@@ -86,13 +86,13 @@ struct ClaudeUsagePollerTests {
         let poller = claude.poller(now: { time })
         await poller.poll(.timer)
         claude.statuses["fake-token-1"] = 401
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         await poller.poll(.timer)
         #expect(claude.sentTokens == ["fake-token-1", "fake-token-1"])
         #expect(poller.reading == nil)
         // As before: the next poll reads the Keychain again.
         let reads = claude.keychainReads
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         await poller.poll(.timer)
         #expect(claude.keychainReads == reads + 1)
     }
@@ -116,7 +116,7 @@ struct ClaudeUsagePollerTests {
         await poller.poll(.timer)
         claude.statuses = ["fake-token-1": 401, "fake-token-2": 401]
         claude.login = ClaudeLogin(token: "fake-token-2", plan: "max")
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         await poller.poll(.timer)
         #expect(claude.sentTokens == ["fake-token-1", "fake-token-1", "fake-token-2"])
         #expect(poller.reading == nil)
@@ -130,7 +130,7 @@ struct ClaudeUsagePollerTests {
         await poller.poll(.timer)
         claude.statuses["fake-token-1"] = 401
         claude.login = nil
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         await poller.poll(.timer)
         #expect(claude.sentTokens == ["fake-token-1", "fake-token-1"])
         #expect(poller.reading == nil)
@@ -145,10 +145,10 @@ struct ClaudeUsagePollerTests {
         await poller.poll(.timer)
         claude.statuses["fake-token-1"] = 401
         claude.login = nil
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         await poller.poll(.timer)
         let reads = claude.keychainReads
-        time += 2 * ClaudeUsagePolling.minimumGap
+        time += 2 * PollSchedule.minimumGap
         #expect(await poller.poll(.popover) == false)
         #expect(claude.keychainReads == reads)
     }
@@ -169,7 +169,7 @@ struct ClaudeUsagePollerTests {
         let poller = claude.poller(now: { time })
         await poller.poll(.timer)
         poller.stop()
-        time += ClaudeUsagePolling.interval
+        time += PollSchedule.interval
         #expect(await poller.poll(.timer))
         #expect(claude.keychainReads == 2)
     }
