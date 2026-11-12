@@ -19,7 +19,7 @@ struct ReadmeTests {
         let steps = try section("### 9. Uninstall")
         let created = [
             // The app, and the copies an interrupted update's swap leaves beside it (`Relaunch`).
-            "~/Applications/UsageBar.app", "UsageBar.app.new", "UsageBar.app.previous",
+            "~/Applications/UsageBar.app", "UsageBar.app.new", "UsageBar.previous.app", "UsageBar.app.previous",
             // The login item (`LoginItem`).
             "Login Items",
             // API keys (`KeychainKeyStore.service`); Claude Code's item is named to be left alone.

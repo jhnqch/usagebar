@@ -20,9 +20,10 @@ Use `scripts/test.sh`, not plain `swift test`. Without full Xcode, Swift Testing
 | Target | What it is |
 |---|---|
 | `Sources/UsageCore` | The **usage engine**. Pure code: raw readings (status line JSON, endpoint responses, app-server messages, log lines), a clock and the price tables in; a `UsageSnapshot` out (menu bar text, popover sections, meters, pace, charts, alerts to fire). No I/O. |
+| `Sources/ProcessRunner` | `ProcessCommandRunner`: runs the updater's commands in a session of their own and stops the session at the command's deadline. A system adapter, kept out of the engine so the tests can drive it against temp directories. |
 | `Sources/UsageBar` | The app: thin adapters (Keychain, network, subprocess, file watching) that feed the engine, and the SwiftUI popover that draws its snapshot. |
 | `Sources/StatusLine` | `usagebar-statusline`, the command Claude Code runs after each reply. It also installs itself into a `settings.json`. |
-| `Tests/UsageCoreTests` | Swift Testing tests against the engine. |
+| `Tests/UsageCoreTests` | Swift Testing tests against the engine, and against `ProcessCommandRunner` in temp directories. |
 | `Fixtures` | Recorded or synthetic readings with a fixed clock, used by the tests and by snapshot mode. |
 
 Tests go through the engine's public interface, with fixtures as input. Adapters stay thin enough to check by hand.
@@ -143,8 +144,8 @@ It tags the current commit with an annotated `v1.2.0`, pushes the tag and create
 How updates work, for reviewers:
 
 - `scripts/build.sh` records `scripts/build-info.sh`'s output in Info.plist: `UsageBarVersion` (`git describe --tags`), `UsageBarRepository` (origin's GitHub `owner/name`, never the URL, which can hold credentials) and `UsageBarSourcePath`.
-- `Updater` (in `UsageCore`) decides when to check, what the popover and the Updates menu say, and whether to install automatically. `GitHubRelease` builds the request and reads the answer. `UpdateRunner` runs the guarded `git fetch --tags origin` → `git checkout --detach <tag>` → `scripts/build.sh` into a staging app, and `Relaunch` swaps that app into place once the running app has quit. They're tested with a fake clock and transport, a fake command runner, and temp git repos.
-- `UpdateController` (in `Sources/UsageBar`) is the thin adapter: `URLSession`, `Process`, the log file and the relaunch.
+- `Updater` (in `UsageCore`) decides when to check, what the popover and the Updates menu say, and whether to install automatically. `GitHubRelease` builds the request and reads the answer. `UpdateRunner` runs the guarded `git fetch --tags origin` → `git checkout --detach <tag>` → `scripts/build.sh` into a staging app, and `Relaunch` swaps that app into place once the running app has quit. `ProcessCommandRunner` (in `Sources/ProcessRunner`) runs each command in a session of its own and stops the whole session at the command's deadline. They're tested with a fake clock and transport, a fake command runner, and temp git repos.
+- `UpdateController` (in `Sources/UsageBar`) is the thin adapter: `URLSession`, the log file and the relaunch.
 
 ## Pull requests
 

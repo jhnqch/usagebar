@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import OSLog
+import ProcessRunner
 import Synchronization
 import UsageCore
 
@@ -194,39 +195,5 @@ final class LogFile: Sendable {
 
     func append(_ text: String) {
         lock.withLock { _ in try? handle?.write(contentsOf: Data(text.utf8)) }
-    }
-}
-
-/// Runs a command as a child process with the app's environment plus the
-/// command's, and the system's tool directories on PATH (an app launched
-/// from Finder gets a bare one). Waits on a dispatch thread, not the
-/// concurrency pool, since a build takes minutes.
-struct ProcessCommandRunner: CommandRunner {
-    func run(_ command: Command) async -> CommandResult {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: command.executable)
-                process.arguments = command.arguments
-                process.currentDirectoryURL = URL(fileURLWithPath: command.directory)
-                var environment = ProcessInfo.processInfo.environment
-                let path = environment["PATH"].map { $0 + ":" } ?? ""
-                environment["PATH"] = path + "/usr/bin:/bin:/usr/sbin:/sbin"
-                process.environment = environment.merging(command.environment) { $1 }
-                let pipe = Pipe()
-                process.standardInput = FileHandle.nullDevice
-                process.standardOutput = pipe
-                process.standardError = pipe
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: CommandResult(status: -1, output: error.localizedDescription))
-                    return
-                }
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                continuation.resume(returning: CommandResult(status: process.terminationStatus, output: String(decoding: data, as: UTF8.self)))
-            }
-        }
     }
 }

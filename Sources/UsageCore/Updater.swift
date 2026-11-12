@@ -236,14 +236,16 @@ public struct Updater: Equatable, Sendable {
     // MARK: Installing
 
     /// The one-click update starts: returns the release to install, or nil
-    /// when there's none, this build only notifies, or one is underway.
+    /// when there's none, this build only notifies, or one is underway. A
+    /// check underway doesn't hold it up: Update may be clicked just after
+    /// the popover opens, and the check's answer leaves the update alone.
     public mutating func startInstall() -> Release? {
         // "Try again" retries the failed release, even when no check since
         // a relaunch has found it again.
         var target = available
         if case let .failed(release, _) = phase { target = release }
         guard canInstall, let target else { return nil }
-        guard allowsCheck else { return nil }
+        if case .installing = phase { return nil }
         phase = .installing(target, .checkingSource)
         return target
     }
