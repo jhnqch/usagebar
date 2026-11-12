@@ -15,36 +15,12 @@ actor UsageLogReader<Parser: UsageLogParser> {
 
     /// Every usage entry logged since `since`, after reading what's new.
     func scan(since: Date) -> [UsageEntry] {
-        for read in scan.reads(for: files(), since: since) {
+        for read in scan.reads(for: UsageLogScan<Parser>.files(under: directories), since: since) {
             if let bytes = bytes(read) {
                 scan.receive(bytes, for: read)
             }
         }
         return scan.entries
-    }
-
-    private func files() -> [UsageLogScan<Parser>.File] {
-        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey, .fileIdentifierKey]
-        var files: [UsageLogScan<Parser>.File] = []
-        for directory in directories {
-            guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
-                continue
-            }
-            for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-                guard
-                    let values = try? url.resourceValues(forKeys: Set(keys)),
-                    values.isRegularFile == true,
-                    let modified = values.contentModificationDate
-                else { continue }
-                files.append(UsageLogScan<Parser>.File(
-                    path: url.path,
-                    size: values.fileSize ?? 0,
-                    modified: modified,
-                    identity: values.fileIdentifier ?? 0
-                ))
-            }
-        }
-        return files
     }
 
     private func bytes(_ read: UsageLogScan<Parser>.Read) -> Data? {

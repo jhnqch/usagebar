@@ -227,6 +227,37 @@ public struct UsageLogScan<Parser: UsageLogParser>: Equatable, Sendable {
     public var entries: [UsageEntry] { ledger.entries }
 }
 
+extension UsageLogScan {
+    /// Every `.jsonl` file at any depth under `directories`, as listed for
+    /// `reads(for:since:)`. Hidden files are skipped; a directory that's
+    /// missing lists nothing. A folder that is itself a symlink (a moved
+    /// `~/.claude/projects`, say) is followed: the enumerator lists nothing
+    /// for a link.
+    public static func files(under directories: [URL]) -> [File] {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey, .fileIdentifierKey]
+        var files: [File] = []
+        for directory in directories.map({ $0.resolvingSymlinksInPath() }) {
+            guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
+                continue
+            }
+            for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+                guard
+                    let values = try? url.resourceValues(forKeys: Set(keys)),
+                    values.isRegularFile == true,
+                    let modified = values.contentModificationDate
+                else { continue }
+                files.append(File(
+                    path: url.path,
+                    size: values.fileSize ?? 0,
+                    modified: modified,
+                    identity: values.fileIdentifier ?? 0
+                ))
+            }
+        }
+        return files
+    }
+}
+
 /// JSON-lines logs: one JSON object per line.
 enum JSONLines {
     /// Calls `body` with each line (without its newline) that contains any
