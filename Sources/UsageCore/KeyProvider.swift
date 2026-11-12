@@ -222,10 +222,15 @@ public enum KeyProblem: Equatable, Sendable {
     case rejected
     /// No key saved.
     case noKey
+    /// Reading the saved key failed: the Keychain prompt was denied, or
+    /// the Keychain is locked.
+    case keychain
     /// A 200 with nothing readable: the format changed.
     case unreadable
-    /// Another HTTP status.
+    /// Another HTTP status, or a 429 or 5xx with no reading to keep.
     case http(Int)
+    /// A network error with no reading to keep.
+    case unreachable
     /// The provider tried to send the key elsewhere.
     case blocked
 }
@@ -265,8 +270,10 @@ public struct KeyProvider<API: KeyAPI>: Provider {
         switch problem {
         case .rejected: "Key rejected"
         case .noKey: "No API key saved"
+        case .keychain: "Couldn't read the API key from the Keychain"
         case .unreadable: "Couldn't read the answer from \(API.hostText)"
         case let .http(status): "\(API.hostText) answered HTTP \(status)"
+        case .unreachable: "Couldn't reach \(API.hostText)"
         case .blocked: "Blocked a request outside \(API.hosts.sorted().joined(separator: ", "))"
         }
     }
@@ -307,9 +314,15 @@ private struct AnyKey: CodingKey {
 ///   readable it drops it ("Couldn't read the answer").
 /// - 401 or 403 drops it ("Key rejected"), and the key is read from the
 ///   store again next time.
-/// - Network errors, 429 and 5xx keep the last reading and back off, 10
-///   minutes doubling to an hour (or as long as `Retry-After` says, up to an
-///   hour).
+/// - 429 and 5xx keep the last reading and back off, 10 minutes doubling to
+///   an hour (or as long as `Retry-After` says, up to an hour).
+/// - Network errors keep the last reading without backing off: after
+///   waking, the network is often not up yet, and Refresh should work once
+///   it is.
+/// - With no reading to keep, a network error, 429 or 5xx says so in the
+///   note.
+/// - A key read that throws (a denied Keychain prompt) drops the reading
+///   and backs off, so the prompt doesn't come back at every poll.
 /// - Any other status, no key, or a blocked request drops it.
 struct KeyPolling<API: KeyAPI>: Sendable {
     private(set) var provider = KeyProvider<API>()
@@ -340,6 +353,25 @@ struct KeyPolling<API: KeyAPI>: Sendable {
         provider.reading = provider.reading.map(change)
     }
 
+    /// A transient failure keeps the last reading as it is; with none to
+    /// keep (first launch offline, a provider down from the start, a new
+    /// key), the note says what happened.
+    private mutating func noteIfNoReading(_ problem: KeyProblem) {
+        if provider.reading == nil {
+            provider = KeyProvider(problem: problem)
+        }
+    }
+
+    /// Reading the key from the store threw: nothing was sent. Drops the
+    /// reading and backs off, as Claude's polling does for its login, so a
+    /// denied Keychain prompt doesn't come straight back.
+    @discardableResult
+    mutating func keyUnreadable(at now: Date) -> Finished {
+        provider = KeyProvider(problem: .keychain)
+        let wait = schedule.backOff(at: now, retryAfter: nil)
+        return Finished(summary: "couldn't read the key from the Keychain, next try in \(Int(wait / 60)) min")
+    }
+
     @discardableResult
     mutating func finish(_ outcome: PollOutcome, at now: Date) -> Finished {
         switch API.interpret(outcome) {
@@ -357,10 +389,13 @@ struct KeyPolling<API: KeyAPI>: Sendable {
             return Finished(forgetKey: true, summary: "HTTP \(status): key rejected")
         case let .response(status, _, retryAfter) where status == 429 || (500...599).contains(status):
             let wait = schedule.backOff(at: now, retryAfter: retryAfter)
+            noteIfNoReading(.http(status))
             return Finished(summary: "HTTP \(status): keeping the last reading, next try in \(Int(wait / 60)) min")
         case .networkError:
-            let wait = schedule.backOff(at: now, retryAfter: nil)
-            return Finished(summary: "network error: keeping the last reading, next try in \(Int(wait / 60)) min")
+            // Often the network isn't up yet after waking: no back-off, so
+            // Refresh and the next popover poll can ask again.
+            noteIfNoReading(.unreachable)
+            return Finished(summary: "network error: keeping the last reading")
         case let .response(status, _, _):
             schedule.endBackoff()
             provider = KeyProvider(problem: .http(status))
@@ -457,21 +492,32 @@ public final class KeyPoller<API: KeyAPI> {
         }
         polling.start(at: now())
 
+        var keyUnreadable = false
         if key == nil {
             // Cache it only if the key didn't change (or the poller stop)
             // while the store answered: otherwise it's the old key.
-            let read = try? await store.key(for: API.id)
+            let read: String?
+            do {
+                read = try await store.key(for: API.id)
+            } catch {
+                read = nil
+                keyUnreadable = true
+            }
             guard generation == self.generation else { return true }
             key = read
         }
-        let outcome: PollOutcome = if let key {
-            await API.fetch(KeyClient(API.self, key: key, transport: transport, userAgent: userAgent, startedAt: now(), options: options))
+        let finished: KeyPolling<API>.Finished
+        if keyUnreadable {
+            finished = polling.keyUnreadable(at: now())
         } else {
-            .noCredentials
+            let outcome: PollOutcome = if let key {
+                await API.fetch(KeyClient(API.self, key: key, transport: transport, userAgent: userAgent, startedAt: now(), options: options))
+            } else {
+                .noCredentials
+            }
+            guard generation == self.generation else { return true }
+            finished = polling.finish(outcome, at: now())
         }
-        guard generation == self.generation else { return true }
-
-        let finished = polling.finish(outcome, at: now())
         if finished.forgetKey {
             key = nil
         }
@@ -521,10 +567,15 @@ public final class KeyPoller<API: KeyAPI> {
         if let typed, !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             guard let key = APIKey.normalized(typed) else { return .invalidKey }
             candidate = key
-        } else if let saved = try? await store.key(for: API.id) {
-            candidate = saved
         } else {
-            return .noKey
+            let saved: String?
+            do {
+                saved = try await store.key(for: API.id)
+            } catch {
+                return .failed(KeyProvider<API>.note(.keychain))
+            }
+            guard let saved else { return .noKey }
+            candidate = saved
         }
         let outcome = await API.fetch(KeyClient(API.self, key: candidate, transport: transport, userAgent: userAgent, startedAt: now(), options: options))
         switch API.interpret(outcome) {
