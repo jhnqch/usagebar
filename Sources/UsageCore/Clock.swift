@@ -21,8 +21,7 @@ public struct Clock: Sendable {
     /// "2d 16h", "1h 05m" or "45m", rounded up to the next minute so it never
     /// promises a reset sooner than it comes.
     func countdown(to end: Date) -> String {
-        let raw = (end.timeIntervalSince(now) / 60).rounded(.up)
-        let minutes = Int(min(max(raw, 0), Double(Self.maxCountdownMinutes)))
+        let minutes = countdownMinutes(to: end)
         switch minutes {
         case 1440...: return "\(minutes / 1440)d \(minutes % 1440 / 60)h"
         case 60...: return "\(minutes / 60)h \(String(format: "%02d", minutes % 60))m"
@@ -30,15 +29,24 @@ public struct Clock: Sendable {
         }
     }
 
+    /// Whole minutes to `end`, rounded up, from 0 to the cap.
+    private func countdownMinutes(to end: Date) -> Int {
+        let raw = (end.timeIntervalSince(now) / 60).rounded(.up)
+        return Int(min(max(raw, 0), Double(Self.maxCountdownMinutes)))
+    }
+
     /// "Resets in 2h 18m (4:58 PM)" within a day, "Resets Tue 7:00 AM" beyond,
-    /// "Reset at 2:00 PM" once passed. (A maxed window's pace line says
-    /// "Limit reached".)
+    /// and once passed "Reset at 2:00 PM" (today) or "Reset Fri 11:00 PM"
+    /// (an earlier day, however recent). "Within a day" goes by the
+    /// countdown's rounded-up minutes, so it never reads "1d 0h". (A maxed
+    /// window's pace line says "Limit reached".)
     func resetText(_ resetsAt: Date) -> String {
-        let distance = resetsAt.timeIntervalSince(now)
-        if distance <= 0 {
-            return -distance < Self.day ? "Reset at \(format(resetsAt, "h:mm a"))" : "Reset \(format(resetsAt, "\(dayPattern(resetsAt)) h:mm a"))"
+        if resetsAt <= now {
+            return calendar.isDate(resetsAt, inSameDayAs: now)
+                ? "Reset at \(format(resetsAt, "h:mm a"))"
+                : "Reset \(format(resetsAt, "\(dayPattern(resetsAt)) h:mm a"))"
         }
-        return distance < Self.day
+        return countdownMinutes(to: resetsAt) < 1440
             ? "Resets in \(countdown(to: resetsAt)) (\(format(resetsAt, "h:mm a")))"
             : "Resets \(format(resetsAt, "\(dayPattern(resetsAt)) h:mm a"))"
     }
