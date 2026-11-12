@@ -60,7 +60,7 @@ struct Palette {
     }
 
     /// Text colour for a level: the default text colour when normal, orange
-    /// from 90%, red at 100%.
+    /// from the warning threshold, red at 100%.
     static func levelText(_ level: Level, dark: Bool) -> NSColor {
         switch level {
         case .normal: .hex(dark ? 0xF2F2F5 : 0x1D1D1F)

@@ -1,8 +1,8 @@
 import Foundation
 
 /// A sample-readings file: readings plus the clock and time zone they were
-/// recorded against. Snapshot mode renders it at `now`; the app rebases it to
-/// the current time.
+/// recorded against. Snapshot mode renders it at `now`; tests can rebase it
+/// to another time (`readings(rebasedTo:)`).
 public struct Fixture: Equatable, Sendable {
     public var now: Date
     public var timeZone: TimeZone

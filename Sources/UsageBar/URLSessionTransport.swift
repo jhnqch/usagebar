@@ -1,9 +1,10 @@
 import Foundation
 import UsageCore
 
-/// Key providers' requests: an ephemeral session that keeps nothing on disk
-/// (no cache, cookies or credentials) and never follows a redirect, so the
-/// `Authorization` header `KeyClient` added can't be carried to another host.
+/// Key providers' requests and the update check: an ephemeral session that
+/// keeps nothing on disk (no cache, cookies or credentials) and never
+/// follows a redirect, so the `Authorization` header `KeyClient` added
+/// can't be carried to another host.
 final class URLSessionTransport: HTTPTransport {
     private let session: URLSession
 

@@ -101,7 +101,7 @@ extension AlertMemory.Cycle: Codable {
 enum LimitAlerts {
     /// What a window's alerts call it.
     struct Names {
-        /// What's at 90%: "Claude 5-hour session".
+        /// What's at the warning threshold: "Claude 5-hour session".
         var near: String
         /// What's reached or reset: "Claude 5-hour limit".
         var limit: String
