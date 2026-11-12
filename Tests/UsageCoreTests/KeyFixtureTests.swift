@@ -54,6 +54,18 @@ struct KeyFixtureTests {
         #expect(section.updatedText == nil)
     }
 
+    @Test("providers that failed before their first reading say why under the dashes")
+    func firstFailures() throws {
+        let snapshot = try snapshot("key-first-failures")
+        let example = try #require(snapshot["example"])
+        #expect(texts(example) == ["Credit —", "Today —", "This month —"])
+        #expect(example.note == "Couldn't reach api.example.com")
+        #expect(example.updatedText == nil)
+        let deepseek = try #require(snapshot["deepseek"])
+        #expect(deepseek.note == "api.deepseek.com answered HTTP 503")
+        #expect(deepseek.updatedText == nil)
+    }
+
     @Test("missing and mistyped fields degrade only their own rows")
     func tolerant() throws {
         let json = """

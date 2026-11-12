@@ -1,0 +1,14 @@
+{
+  "_comment": "Synthetic: key providers that never got a reading since launch. The example API's request failed with a network error (offline after waking), and DeepSeek answered 503.",
+  "now": "2026-10-10T14:40:00-07:00",
+  "timeZone": "America/Los_Angeles",
+  "readings": {
+    "example": [
+      { "receivedAt": "2026-10-10T14:39:00-07:00", "failure": "network" }
+    ],
+    "deepseek": [
+      { "receivedAt": "2026-10-10T14:39:00-07:00", "status": 503, "body": "<html><body>Service Unavailable</body></html>", "retryAfter": 120 }
+    ]
+  },
+  "providers": { "enabled": ["example", "deepseek"], "menuBar": [] }
+}
