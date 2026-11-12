@@ -137,6 +137,22 @@ struct ClaudeUsagePollerTests {
         #expect(poller.plan == nil)
     }
 
+    @Test("a 401 for a cached token with no login left backs off like no login, so a denied Keychain prompt doesn't come straight back")
+    func loginGoneBacksOff() async throws {
+        let claude = try FakeClaude()
+        var time = start
+        let poller = claude.poller(now: { time })
+        await poller.poll(.timer)
+        claude.statuses["fake-token-1"] = 401
+        claude.login = nil
+        time += ClaudeUsagePolling.interval
+        await poller.poll(.timer)
+        let reads = claude.keychainReads
+        time += 2 * ClaudeUsagePolling.minimumGap
+        #expect(await poller.poll(.popover) == false)
+        #expect(claude.keychainReads == reads)
+    }
+
     @Test("a poll that isn't due asks nothing")
     func notDue() async throws {
         let claude = try FakeClaude()

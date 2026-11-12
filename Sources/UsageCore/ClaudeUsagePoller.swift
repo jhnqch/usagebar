@@ -94,7 +94,14 @@ public final class ClaudeUsagePoller {
         let login = await readLogin()
         guard generation == self.generation else { return false }
         plan = login?.plan
-        guard let fresh = login?.token, fresh != refused else { return true }
+        guard let fresh = login?.token else {
+            // No login left (or the Keychain prompt was denied): back off
+            // as for no saved login, so the prompt doesn't come straight back.
+            finished = polling.finish(.noCredentials, at: now())
+            log(finished.summary)
+            return true
+        }
+        guard fresh != refused else { return true }
         token = fresh
         polling.start(at: now())
         let retried = await fetch(fresh)
