@@ -53,7 +53,8 @@ public struct TokenCounts: Equatable, Sendable {
         )
     }
 
-    static func + (lhs: TokenCounts, rhs: TokenCounts) -> TokenCounts {
+    /// Each count summed.
+    public static func + (lhs: TokenCounts, rhs: TokenCounts) -> TokenCounts {
         TokenCounts(
             input: lhs.input + rhs.input,
             cacheWrite5m: lhs.cacheWrite5m + rhs.cacheWrite5m,
@@ -292,12 +293,5 @@ enum JSONLines {
                 start = end + 1
             }
         }
-    }
-
-    /// Log timestamps, with or without fractional seconds:
-    /// "2026-10-09T22:20:44.544Z".
-    static func date(_ text: String) -> Date? {
-        (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
-            ?? (try? Date(text, strategy: .iso8601))
     }
 }

@@ -166,7 +166,8 @@ public struct CreditMeter: Equatable, Sendable, Identifiable {
     public var valueText: String
     /// Bar fill: the fraction used, 0...1.
     public var fraction: Double
-    /// Warning from 90% used; maxed with nothing left.
+    /// Warning from the warning threshold's share used; maxed with nothing
+    /// left.
     public var level: Level
     /// "Resets Sun 12:00 AM"; nil when the credit doesn't reset or there's
     /// no reading.

@@ -60,8 +60,8 @@ public struct ProviderReport: Equatable, Sendable {
 
     /// One row of a provider's section.
     public enum Row: Equatable, Sendable {
-        /// A limit window: a meter with pace, alerts at 90% and on reset, and
-        /// a share of the menu bar part.
+        /// A limit window: a meter with pace, alerts at the warning threshold
+        /// and on reset, and a share of the menu bar part.
         case window(LimitWindow)
         /// Credit with a total: a meter of what's used, reading
         /// "$12.40 left of $20". No pace, no alerts, no menu bar part.
@@ -143,7 +143,8 @@ public struct LimitWindow: Equatable, Sendable {
     public var reading: LimitReading?
     /// What alerts call it when reached or reset: "Claude 5-hour limit".
     public var alertName: String
-    /// What alerts call it at 90%: "Claude 5-hour session". Defaults to
+    /// What alerts call it at the warning threshold: "Claude 5-hour
+    /// session". Defaults to
     /// `alertName`.
     public var nearAlertName: String
     /// Whether it counts toward the provider's menu bar part. A limit that

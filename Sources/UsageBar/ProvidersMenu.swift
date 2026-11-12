@@ -4,7 +4,7 @@ import UsageCore
 /// The Providers menu, popped up from the popover's footer: a section per
 /// provider with "Show <name>", "Show in menu bar" and "Alerts", and for a
 /// key provider "API key…", which opens its key window, and its options
-/// (GitHub Copilot's premium requests meter); then an Alerts section with
+/// (GitHub Copilot's "Quota meter and plan"); then an Alerts section with
 /// the warning threshold and the two alert kinds; then an Updates section
 /// with "Check for updates automatically", "Install updates automatically"
 /// and "Check now".

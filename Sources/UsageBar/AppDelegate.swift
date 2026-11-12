@@ -62,6 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = true
 
         model.onChange = { [weak self] snapshot in self?.show(snapshot.menuBar) }
+        // `onChange` fires only when the snapshot changes: show the first one now.
+        show(model.snapshot.menuBar)
         model.onAlertMemoryChange = { [log] memory in
             do {
                 try AlertMemoryFile.save(memory)
@@ -174,13 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func show(_ label: MenuBarLabel) {
-        if statusItem?.button?.accessibilityLabel() != MenuBarText.accessibilityLabel(label) {
+        if statusItem?.button?.accessibilityLabel() != label.accessibilityText {
             log.info("menu bar: \(label.text, privacy: .public)")
         }
         statusItem?.button?.attributedTitle = MenuBarText.attributed(label)
         // With no part to show, a neutral icon keeps the status item clickable.
         statusItem?.button?.image = label.parts.isEmpty ? MenuBarText.neutralIcon : nil
-        statusItem?.button?.setAccessibilityLabel(MenuBarText.accessibilityLabel(label))
+        statusItem?.button?.setAccessibilityLabel(label.accessibilityText)
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
@@ -236,7 +238,7 @@ private struct PopoverHost: View {
                     setLimitReset: { model.setLimitResetAlerts($0) },
                     setCheckForUpdates: { updates.setCheckAutomatically($0) },
                     setInstallUpdates: { updates.setInstallAutomatically($0) },
-                    checkNow: { updates.checkNow() }
+                    checkNow: { updates.check() }
                 )).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
             },
             onRefresh: onRefresh,

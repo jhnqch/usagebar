@@ -70,7 +70,7 @@ public enum CopilotAPI: KeyAPI {
         guard case let .response(200, userBody, _) = user else { return user }
         guard let login = login(in: userBody) else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
 
-        let month = utc.dateComponents([.year, .month], from: client.startedAt)
+        let month = UTC.calendar.dateComponents([.year, .month], from: client.startedAt)
         guard let year = month.year, let monthNumber = month.month else { return .response(status: 200, body: Data("{}".utf8), retryAfter: nil) }
 
         var combined: [String: Any] = [
@@ -159,7 +159,6 @@ public enum CopilotAPI: KeyAPI {
     // MARK: Reading
 
     public struct Reading: Equatable, Sendable {
-        public var login: String?
         /// When the UTC month the reports cover ends: midnight UTC on the
         /// next 1st.
         public var monthEnds: Date?
@@ -232,19 +231,18 @@ public enum CopilotAPI: KeyAPI {
     public static func reading(fromResponse body: Data, receivedAt: Date) -> Reading? {
         guard let root = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
               let premiumPart = root["billing"] as? [String: Any] else { return nil }
-        let login = (root["user"] as? [String: Any])?["login"] as? String
 
         let period = root["period"] as? [String: Any]
         let monthEnds: Date? = {
             guard let year = Amount.number(period?["year"]).flatMap({ Int(exactly: $0) }),
                   let month = Amount.number(period?["month"]).flatMap({ Int(exactly: $0) }), (1...12).contains(month),
-                  (2000...3000).contains(year) else { return nextFirst(after: receivedAt) }
-            return utc.date(from: DateComponents(year: year, month: month + 1, day: 1))
+                  (2000...3000).contains(year) else { return UTC.nextMonthStart(after: receivedAt) }
+            return UTC.calendar.date(from: DateComponents(year: year, month: month + 1, day: 1))
         }()
 
         let meter = (root["copilotInternal"] as? [String: Any]).map { quota($0, receivedAt: receivedAt) }
         let credits = (root["aiCredits"] as? [String: Any]).map(billing) ?? .usage(Usage())
-        return Reading(login: login, monthEnds: monthEnds, aiCredits: credits, premiumRequests: billing(premiumPart), quota: meter)
+        return Reading(monthEnds: monthEnds, aiCredits: credits, premiumRequests: billing(premiumPart), quota: meter)
     }
 
     private static func billing(_ part: [String: Any]) -> Billing {
@@ -278,17 +276,17 @@ public enum CopilotAPI: KeyAPI {
         guard status == 200, let body = part["body"] as? [String: Any] else { return quota }
         quota.plan = (body["copilot_plan"] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
 
-        let given = (body["quota_reset_date_utc"] as? String).flatMap(isoDate)
+        let given = (body["quota_reset_date_utc"] as? String).flatMap(Date.init(iso8601:))
             ?? (body["quota_reset_date"] as? String).flatMap(dayDate)
         // A reset more than a day before the answer, or beyond next month,
         // is wrong: the next 1st. One just passed (the month turned while
         // the answer was on its way) stays, so the meter reads 0%.
         let resetsAt = given.flatMap {
             $0.timeIntervalSince(receivedAt) > -86400 && $0.timeIntervalSince(receivedAt) <= 32 * 86400 ? $0 : nil
-        } ?? nextFirst(after: receivedAt)
+        } ?? UTC.nextMonthStart(after: receivedAt)
         quota.resetsAt = resetsAt
         quota.minutes = resetsAt.flatMap { reset in
-            utc.date(byAdding: .month, value: -1, to: reset).map { Int(reset.timeIntervalSince($0) / 60) }
+            UTC.calendar.date(byAdding: .month, value: -1, to: reset).map { Int(reset.timeIntervalSince($0) / 60) }
         }
 
         guard let premium = (body["quota_snapshots"] as? [String: Any])?["premium_interactions"] as? [String: Any] else {
@@ -463,30 +461,12 @@ public enum CopilotAPI: KeyAPI {
 
     // MARK: Time
 
-    /// GitHub's billing months and Copilot's quotas follow UTC.
-    private static let utc: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        return calendar
-    }()
-
-    /// Midnight UTC on the first 1st after `date`.
-    static func nextFirst(after date: Date) -> Date? {
-        utc.nextDate(after: date, matching: DateComponents(day: 1, hour: 0, minute: 0, second: 0), matchingPolicy: .strict)
-    }
-
-    /// "2026-11-01T00:00:00.000Z", with or without fractional seconds.
-    private static func isoDate(_ text: String) -> Date? {
-        (try? Date(text, strategy: .iso8601))
-            ?? (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
-    }
-
     /// "2026-11-01" at midnight UTC.
     private static func dayDate(_ text: String) -> Date? {
         let parts = text.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3, let date = utc.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else { return nil }
+        guard parts.count == 3, let date = UTC.calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else { return nil }
         // Not a day that rolled over into another: 31 Feb isn't 3 Mar.
-        let read = utc.dateComponents([.year, .month, .day], from: date)
+        let read = UTC.calendar.dateComponents([.year, .month, .day], from: date)
         return [read.year, read.month, read.day] == [parts[0], parts[1], parts[2]] ? date : nil
     }
 }

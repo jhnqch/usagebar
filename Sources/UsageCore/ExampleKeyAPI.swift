@@ -44,20 +44,20 @@ public enum ExampleKeyAPI: KeyAPI {
         let spend = data["spend"] as? [String: Any] ?? [:]
         let spendCurrency = spend["currency"] as? String
         func amount(_ value: Any?, _ currency: String?) -> Amount? {
-            guard let currency, let number = number(value) else { return nil }
+            guard let currency, let number = Amount.number(value) else { return nil }
             return Amount(number, .currency(currency))
         }
         // Each entry on its own: a malformed one drops only itself.
         let balances = (data["balances"] as? [Any] ?? []).compactMap { element -> Amount? in
             guard let entry = element as? [String: Any],
-                  let currency = entry["currency"] as? String, let amount = number(entry["amount"]) else { return nil }
+                  let currency = entry["currency"] as? String, let amount = Amount.number(entry["amount"]) else { return nil }
             return Amount(amount, .currency(currency))
         }
         let reading = Reading(
             plan: data["plan"] as? String,
             creditLeft: amount(credit["remaining"], creditCurrency),
             creditLimit: amount(credit["limit"], creditCurrency),
-            creditResetsAt: (credit["resets_at"] as? String).flatMap { try? Date($0, strategy: .iso8601) },
+            creditResetsAt: (credit["resets_at"] as? String).flatMap(Date.init(iso8601:)),
             spentToday: amount(spend["today"], spendCurrency),
             spentThisMonth: amount(spend["this_month"], spendCurrency),
             balances: balances
@@ -87,13 +87,6 @@ public enum ExampleKeyAPI: KeyAPI {
         var copy = reading
         copy.creditResetsAt = reading.creditResetsAt.map { $0 + offset }
         return copy
-    }
-
-    /// A number, or a string holding one.
-    private static func number(_ value: Any?) -> Double? {
-        if let string = value as? String { return Double(string).flatMap { $0.isFinite ? $0 : nil } }
-        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
-        return number.doubleValue.isFinite ? number.doubleValue : nil
     }
 }
 

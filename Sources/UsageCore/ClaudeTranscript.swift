@@ -120,7 +120,7 @@ public enum ClaudeTranscript {
                 message.model != "<synthetic>",
                 // Without an id the reply's streamed copies can't be merged.
                 let id = message.id ?? (try? c.decodeIfPresent(String.self, forKey: .requestId)),
-                let timestamp = (try? c.decodeIfPresent(String.self, forKey: .timestamp)).flatMap(Self.date)
+                let timestamp = (try? c.decodeIfPresent(String.self, forKey: .timestamp)).flatMap(Date.init(iso8601:))
             else { return }
             entry = UsageEntry(
                 id: id,
@@ -130,12 +130,6 @@ public enum ClaudeTranscript {
                 fast: usage.fast,
                 usOnly: usage.usOnly
             )
-        }
-
-        /// Transcript timestamps carry milliseconds: "2026-10-09T22:20:44.544Z".
-        private static func date(_ text: String) -> Date? {
-            (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
-                ?? (try? Date(text, strategy: .iso8601))
         }
     }
 }

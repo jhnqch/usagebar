@@ -438,8 +438,6 @@ private struct EmptyStateView: View {
 private struct ProvidersButton: View {
     var onShow: () -> Void
 
-    @Environment(\.colorScheme) private var scheme
-
     var body: some View {
         Button(action: onShow) {
             HStack(spacing: 4) {

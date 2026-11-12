@@ -14,15 +14,7 @@ enum UsageReport {
         let recent = entries.filter { $0.timestamp >= since }
         var lines = ["since \(since.formatted(.iso8601))", (["model", entryName] + columns + ["total", "dollars"]).joined(separator: "\t")]
         func row(_ name: String, _ entries: [UsageEntry]) -> String {
-            let tokens = entries.reduce(TokenCounts()) { sum, entry in
-                TokenCounts(
-                    input: sum.input + entry.tokens.input,
-                    cacheWrite5m: sum.cacheWrite5m + entry.tokens.cacheWrite5m,
-                    cacheWrite1h: sum.cacheWrite1h + entry.tokens.cacheWrite1h,
-                    cacheRead: sum.cacheRead + entry.tokens.cacheRead,
-                    output: sum.output + entry.tokens.output
-                )
-            }
+            let tokens = entries.reduce(TokenCounts()) { $0 + $1.tokens }
             let dollars = entries.reduce(0.0) { $0 + (prices.price(for: $1.model)?.dollars($1) ?? 0) }
             return [name, "\(entries.count)", "\(tokens.input)", "\(tokens.cacheWrite5m)", "\(tokens.cacheWrite1h)",
                     "\(tokens.cacheRead)", "\(tokens.output)", "\(tokens.total)", String(format: "%.6f", dollars)]

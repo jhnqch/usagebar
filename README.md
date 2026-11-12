@@ -100,7 +100,7 @@ Claude and Codex are found automatically. Each key provider needs a key you past
    ```
 
    It backs `settings.json` up and sets its `statusLine`. If you already have a different status line, it leaves it alone and says so; add `--replace` to replace it. If you set `USAGEBAR_APP` in step 1, use that path instead. If you use `$CLAUDE_CONFIG_DIR`, pass `$CLAUDE_CONFIG_DIR/settings.json`.
-3. Send Claude Code a message. Its status line shows something like `opus 5.5 · 5h 42% · wk 61%`, and UsageBar's Claude meters update.
+3. Send Claude Code a message. Its status line shows something like `Opus 5.5 · 5h 42% · wk 61%`, and UsageBar's Claude meters update.
 
 See [Claude](#claude) for what each source provides.
 
@@ -270,19 +270,19 @@ UsageBar shows Claude once Claude Code is set up (`~/.claude`, `$CLAUDE_CONFIG_D
    ~/Applications/UsageBar.app/Contents/Helpers/usagebar-statusline install ~/.claude/settings.json
    ```
 
-   This backs up `settings.json` and sets its `statusLine`. If you already have a different status line, it changes nothing and tells you; add `--replace` to replace it. The command saves the limits to `~/Library/Application Support/UsageBar/claude-status-line.json` and prints a compact line for the terminal, such as `opus 5.5 · 5h 42% · wk 61%`.
+   This backs up `settings.json` and sets its `statusLine`. If you already have a different status line, it changes nothing and tells you; add `--replace` to replace it. The command saves the limits to `~/Library/Application Support/UsageBar/claude-status-line.json` and prints a compact line for the terminal, such as `Opus 5.5 · 5h 42% · wk 61%`.
 
 2. **Claude's OAuth usage endpoint** (undocumented): `GET https://api.anthropic.com/api/oauth/usage`, read with Claude Code's saved login from the Keychain item `Claude Code-credentials`. It's the only source for the weekly Fable limit, and it includes use from the Claude desktop app and claude.ai. UsageBar reads it with the system's `security` tool, so macOS may ask whether `security` may use that item, and may ask again after Claude Code refreshes its login. The plan badge (e.g. "Max") comes from the same saved login.
 
    When both sources describe the same window, the higher percent wins.
 
-The cost chart reads Claude Code's transcripts in `~/.claude/projects` and prices each reply at API rates. It's a proxy: Anthropic doesn't publish how subscription limits are counted.
+The cost chart reads Claude Code's transcripts in `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) and prices each reply at API rates. It's a proxy: Anthropic doesn't publish how subscription limits are counted.
 
 ### Codex
 
-UsageBar shows Codex once `~/.codex` (or `$CODEX_HOME`) exists or a `codex` binary is installed, including the one bundled in the ChatGPT app. It runs `codex app-server` and asks it for the rate limits, which it then pushes live. If app-server isn't available, the latest limits from Codex's session logs in `~/.codex/sessions` stand in. When both have limits, each window shows the fresher of the two that can be read. Set `USAGEBAR_CODEX` to the path of a `codex` binary to choose which one is used.
+UsageBar shows Codex once `~/.codex` (or `$CODEX_HOME`) exists or a `codex` binary is installed, including the one bundled in the ChatGPT app. It runs `codex app-server` and asks it for the rate limits, which it then pushes live. Codex's session logs in `~/.codex/sessions` are a second source: their latest limits stand in when app-server isn't available, and also win whenever their record is newer than app-server's. Each window shows the fresher of the two that can be read. Set `USAGEBAR_CODEX` to the path of a `codex` binary to choose which one is used.
 
-The cost chart reads the same session logs and prices them at OpenAI's API rates.
+The cost chart reads the same session logs, and the ones Codex has moved to `~/.codex/archived_sessions`, and prices them at OpenAI's API rates.
 
 ### OpenRouter
 

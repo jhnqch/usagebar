@@ -94,9 +94,9 @@ public enum OpenRouterAPI: KeyAPI {
         switch data["limit"] {
         case is NSNull: keyLimit = .unlimited
         case let value:
-            if let limit = number(value) {
+            if let limit = Amount.number(value) {
                 let resetsAt = (data["limit_reset"] as? String).flatMap { nextReset(after: receivedAt, interval: $0) }
-                keyLimit = .limited(left: number(data["limit_remaining"]), limit: limit, resetsAt: resetsAt)
+                keyLimit = .limited(left: Amount.number(data["limit_remaining"]), limit: limit, resetsAt: resetsAt)
             } else {
                 keyLimit = .unknown
             }
@@ -109,12 +109,12 @@ public enum OpenRouterAPI: KeyAPI {
             monthEnds: nextReset(after: receivedAt, interval: "monthly"),
             isFreeTier: data["is_free_tier"] as? Bool,
             keyLimit: keyLimit,
-            spentToday: number(data["usage_daily"]),
-            spentThisWeek: number(data["usage_weekly"]),
-            spentThisMonth: number(data["usage_monthly"]),
+            spentToday: Amount.number(data["usage_daily"]),
+            spentThisWeek: Amount.number(data["usage_weekly"]),
+            spentThisMonth: Amount.number(data["usage_monthly"]),
             budgets: (data["budgets"] as? [Any] ?? []).compactMap { budget($0, receivedAt: receivedAt) },
-            freeRequestsLeft: number(freeRequests["remaining"]),
-            freeRequestsLimit: number(freeRequests["limit"])
+            freeRequestsLeft: Amount.number(freeRequests["remaining"]),
+            freeRequestsLimit: Amount.number(freeRequests["limit"])
         )
         // The period ends come from the clock, not the answer: nothing
         // readable in it is no reading.
@@ -131,9 +131,9 @@ public enum OpenRouterAPI: KeyAPI {
         let scope = entry["scope"] as? String
         guard scope != "key_limit" else { return nil }
         let interval = (entry["reset_interval"] as? String)?.lowercased()
-        let limit = number(entry["limit_usd"])
-        let spent = number(entry["spend_usd"]) ?? number(entry["remaining_usd"]).flatMap { remaining in limit.map { $0 - remaining } }
-        let resetsAt = (entry["resets_at"] as? String).flatMap(date) ?? interval.flatMap { nextReset(after: receivedAt, interval: $0) }
+        let limit = Amount.number(entry["limit_usd"])
+        let spent = Amount.number(entry["spend_usd"]) ?? Amount.number(entry["remaining_usd"]).flatMap { remaining in limit.map { $0 - remaining } }
+        let resetsAt = (entry["resets_at"] as? String).flatMap(Date.init(iso8601:)) ?? interval.flatMap { nextReset(after: receivedAt, interval: $0) }
         // An entry with nothing it recognises (every field renamed) is no
         // budget, rather than a row of dashes.
         guard limit != nil || spent != nil || resetsAt != nil || interval != nil else { return nil }
@@ -257,27 +257,13 @@ public enum OpenRouterAPI: KeyAPI {
         case "weekly": .weekOfYear
         default: .month
         }
-        guard let start = utc.date(byAdding: component, value: -1, to: resetsAt) else { return 30 * 1440 }
+        guard let start = UTC.calendar.date(byAdding: component, value: -1, to: resetsAt) else { return 30 * 1440 }
         return max(Int(resetsAt.timeIntervalSince(start) / 60), 1)
-    }
-
-    /// An ISO 8601 time, with or without fractional seconds.
-    private static func date(_ text: String) -> Date? {
-        (try? Date(text, strategy: .iso8601))
-            ?? (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
     }
 
     private static func dollars(_ value: Double) -> Amount {
         Amount(value, .usd)
     }
-
-    /// The UTC calendar OpenRouter's days, weeks (from Monday) and months
-    /// follow.
-    private static let utc: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        return calendar
-    }()
 
     /// The first midnight UTC after `date` that starts a new day, week
     /// (Monday) or month; nil for any other interval.
@@ -286,16 +272,9 @@ public enum OpenRouterAPI: KeyAPI {
         switch interval.lowercased() {
         case "daily": components = DateComponents(hour: 0, minute: 0, second: 0)
         case "weekly": components = DateComponents(hour: 0, minute: 0, second: 0, weekday: 2)
-        case "monthly": components = DateComponents(day: 1, hour: 0, minute: 0, second: 0)
+        case "monthly": return UTC.nextMonthStart(after: date)
         default: return nil
         }
-        return utc.nextDate(after: date, matching: components, matchingPolicy: .strict)
-    }
-
-    /// A number, or a string holding one.
-    private static func number(_ value: Any?) -> Double? {
-        if let string = value as? String { return Double(string).flatMap { $0.isFinite ? $0 : nil } }
-        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
-        return number.doubleValue.isFinite ? number.doubleValue : nil
+        return UTC.calendar.nextDate(after: date, matching: components, matchingPolicy: .strict)
     }
 }

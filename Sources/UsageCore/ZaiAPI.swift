@@ -213,7 +213,7 @@ extension ZaiPlatformAPI {
         case .week: count * 10080
         case .month:
             resetsAt.flatMap { reset in
-                utc.date(byAdding: .month, value: -count, to: reset).map { Int(reset.timeIntervalSince($0) / 60) }
+                UTC.calendar.date(byAdding: .month, value: -count, to: reset).map { Int(reset.timeIntervalSince($0) / 60) }
             } ?? count * 30 * 1440
         }
         return ZaiQuota.Length(count: count, unit: unit, minutes: minutes)
@@ -295,12 +295,6 @@ extension ZaiPlatformAPI {
             return moved
         }
         return copy
-    }
-
-    private static var utc: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        return calendar
     }
 }
 

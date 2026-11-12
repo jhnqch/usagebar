@@ -388,6 +388,22 @@ struct AutomaticInstallTests {
         #expect(current.banner == nil)
     }
 
+    @Test("a failed release is forgotten once a build of it (or newer) is installed")
+    func failedTagClearedOnceInstalled() {
+        let store = MemoryStore()
+        var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))
+        let failed = updater.swapFailed(tag: "v1.1.0", logPath: nil)
+        #expect(failed)
+        updater.settings.save(to: store)
+
+        let installed = BuildInfo(
+            version: BuildVersion(describe: "v1.1.0"), repository: GitHubRepository("acme/usagebar"), sourcePath: "/src/usagebar"
+        )
+        #expect(Updater(build: installed, settings: UpdateSettings(loadingFrom: store)).settings.failedTag == nil)
+        // Still on the old build, it's remembered.
+        #expect(Updater(build: fromCheckout, settings: UpdateSettings(loadingFrom: store)).settings.failedTag == "v1.1.0")
+    }
+
     @Test("a swap failure with no saved release still shows, and a newer release replaces it")
     func swapFailedWithoutSavedRelease() throws {
         var updater = Updater(build: fromCheckout, settings: UpdateSettings(installAutomatically: true))

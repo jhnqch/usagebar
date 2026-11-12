@@ -277,7 +277,7 @@ public enum CodexRollout {
 
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            timestamp = (try? c.decodeIfPresent(String.self, forKey: .timestamp)).flatMap(JSONLines.date)
+            timestamp = (try? c.decodeIfPresent(String.self, forKey: .timestamp)).flatMap(Date.init(iso8601:))
             let payload = try? c.nestedContainer(keyedBy: PayloadKeys.self, forKey: .payload)
             switch try? c.decodeIfPresent(String.self, forKey: .type) {
             case "session_meta"?:

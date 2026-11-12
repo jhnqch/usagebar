@@ -22,9 +22,6 @@ import Foundation
 /// off, doubling from 10 minutes up to an hour, or longer if `Retry-After`
 /// says so (also up to an hour).
 public struct ClaudeUsagePolling: Sendable {
-    public static let interval = PollSchedule.interval
-    public static let minimumGap = PollSchedule.minimumGap
-
     public typealias Trigger = PollTrigger
     public typealias Outcome = PollOutcome
 

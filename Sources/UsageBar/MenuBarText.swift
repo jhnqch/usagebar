@@ -14,10 +14,6 @@ enum MenuBarText {
         return title
     }
 
-    static func accessibilityLabel(_ label: MenuBarLabel) -> String {
-        label.accessibilityText
-    }
-
     /// Shown alone when no provider has a part: nothing is on, or every
     /// part is turned off.
     static var neutralIcon: NSImage? {

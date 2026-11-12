@@ -51,7 +51,7 @@ struct RateLimitWindow {
     /// per-model quota, say) gives nil. Nil too when no window can be
     /// identified, so the other source can stand in.
     static func codexLimits(limitID: String?, plan: String?, windows: [RateLimitWindow?], capturedAt: Date?) -> CodexLimits? {
-        guard limitID == nil || limitID == "codex" else { return nil }
+        guard isCodexBucket(limitID) else { return nil }
         var seen = Set<Int>()
         var result: [CodexWindow] = []
         for case let window? in windows {
@@ -64,6 +64,17 @@ struct RateLimitWindow {
         }
         guard !result.isEmpty else { return nil }
         return CodexLimits(plan: plan, capturedAt: capturedAt, windows: result)
+    }
+}
+
+extension RateLimitWindow {
+    /// The id of the main bucket, the one that feeds the meters.
+    static let codexBucketID = "codex"
+
+    /// Whether a snapshot with this `limit_id` is the main `codex` bucket;
+    /// one without an id is (older Codex sends none).
+    static func isCodexBucket(_ limitID: String?) -> Bool {
+        limitID == nil || limitID == codexBucketID
     }
 }
 

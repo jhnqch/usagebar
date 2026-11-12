@@ -160,6 +160,12 @@ public struct Updater: Equatable, Sendable {
             self.settings.checkedRepository = nil
             self.settings.failedTag = nil
         }
+        // A failed release this build already is (or is newer than) was
+        // installed after all: forget it.
+        if let failed = self.settings.failedTag.flatMap({ Release(tag: $0, page: nil) }), let version = build.version,
+           !version.isOlder(than: failed.version) {
+            self.settings.failedTag = nil
+        }
     }
 
     // MARK: Checking
