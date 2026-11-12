@@ -13,10 +13,13 @@ let package = Package(
         // Pure usage engine: readings + clock in, snapshot out. No I/O.
         .target(name: "UsageCore"),
         // Thin app shell: status item, popover, snapshot mode, launch at login.
-        .executableTarget(name: "UsageBar", dependencies: ["UsageCore"]),
+        // The one system adapter the tests drive for real: runs the
+        // updater's commands with deadlines. Kept out of the pure engine.
+        .target(name: "ProcessRunner", dependencies: ["UsageCore"]),
+        .executableTarget(name: "UsageBar", dependencies: ["UsageCore", "ProcessRunner"]),
         // Small command Claude Code runs after each reply: saves the rate
         // limits for the app and prints a compact line. Also installs itself.
         .executableTarget(name: "StatusLine", dependencies: ["UsageCore"]),
-        .testTarget(name: "UsageCoreTests", dependencies: ["UsageCore"]),
+        .testTarget(name: "UsageCoreTests", dependencies: ["UsageCore", "ProcessRunner"]),
     ]
 )

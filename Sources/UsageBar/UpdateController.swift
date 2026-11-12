@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import OSLog
+import ProcessRunner
 import Synchronization
 import UsageCore
 

@@ -1,4 +1,5 @@
 import Foundation
+import UsageCore
 
 /// Runs a command as a child process with the app's environment plus the
 /// command's, and the system's tool directories on PATH (an app launched

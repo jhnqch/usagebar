@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ProcessRunner
 import UsageCore
 
 /// Whether a process is still running (a zombie waiting to be reaped counts
