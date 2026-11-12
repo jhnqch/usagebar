@@ -95,7 +95,9 @@ public enum UsageEngine {
     /// Resets this close together belong to the same window. Two sources
     /// round them differently (Claude's endpoint says 06:59:59.82 where its
     /// status line says 07:00:00), and a new 5-hour or weekly window resets
-    /// hours or days after the one before.
+    /// hours or days after the one before. Used wherever two readings'
+    /// resets are compared: merging Claude's sources, ordering status line
+    /// readings, and knowing an alert's cycle.
     static let sameWindowTolerance: TimeInterval = 15 * 60
 
     /// The highest window's percent, or, while any window is maxed, the time

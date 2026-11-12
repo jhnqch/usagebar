@@ -304,16 +304,12 @@ extension ClaudeStatusLine {
 // MARK: - Which reading is later
 
 extension LimitReading {
-    /// Resets this close together are the same window: a new 5-hour or
-    /// weekly window resets hours or days after the one before.
-    private static let sameWindow: TimeInterval = 60 * 60
-
     /// Whether this reading is at least as recent as `old`, judged by the
     /// numbers alone (a status line JSON doesn't say when it was fetched).
     /// Within a window that's still running, use only goes up; otherwise the
     /// window that resets later is the later one.
     func supersedes(_ old: LimitReading, at now: Date) -> Bool {
-        if old.resetsAt > now, abs(resetsAt.timeIntervalSince(old.resetsAt)) < Self.sameWindow {
+        if old.resetsAt > now, abs(resetsAt.timeIntervalSince(old.resetsAt)) <= UsageEngine.sameWindowTolerance {
             return usedPercent >= old.usedPercent
         }
         return resetsAt >= old.resetsAt

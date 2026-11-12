@@ -88,11 +88,11 @@ public enum CodexSessionLog {
                 payload.isTokenCount,
                 let rateLimits = payload.rateLimits
             else { return }
-            let timestamp = (try? c.decodeIfPresent(String.self, forKey: .timestamp)).flatMap(Self.date)
+            let timestamp = (try? c.decodeIfPresent(String.self, forKey: .timestamp)).flatMap(Date.init(iso8601:))
             switch rateLimits {
             case let .success(rateLimits):
                 // Another bucket (a per-model quota, say) isn't about these meters.
-                guard rateLimits.limitID == nil || rateLimits.limitID == "codex" else { return }
+                guard RateLimitWindow.isCodexBucket(rateLimits.limitID) else { return }
                 record = Record(
                     capturedAt: timestamp,
                     limits: RateLimitWindow.codexLimits(
@@ -105,12 +105,6 @@ public enum CodexSessionLog {
             case .failure:
                 record = Record(capturedAt: timestamp, limits: nil)
             }
-        }
-
-        /// Session-log timestamps carry milliseconds: "2026-10-10T20:22:28.809Z".
-        private static func date(_ text: String) -> Date? {
-            (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
-                ?? (try? Date(text, strategy: .iso8601))
         }
     }
 }

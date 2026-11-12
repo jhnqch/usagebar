@@ -272,7 +272,7 @@ struct RateLimitsReadResult: Decodable {
     /// The `codex` bucket: from the multi-bucket view when present, else
     /// the single-bucket view.
     var codexBucket: AppServerRateLimits? {
-        rateLimitsByLimitId?["codex"] ?? rateLimits
+        rateLimitsByLimitId?[RateLimitWindow.codexBucketID] ?? rateLimits
     }
 }
 
@@ -297,7 +297,7 @@ struct AppServerRateLimits: Decodable {
 
     /// Whether this is the main `codex` bucket that feeds the meters.
     var isCodexBucket: Bool {
-        limitId == nil || limitId == "codex"
+        RateLimitWindow.isCodexBucket(limitId)
     }
 
     func codexLimits(capturedAt: Date) -> CodexLimits? {
