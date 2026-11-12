@@ -72,7 +72,7 @@ UsageBar is built from source on the Mac that runs it. There's no signed downloa
 5. **Balances and credits.** Key providers also show rows such as "$12.40 left of $20" (drawn as a meter) or "Balance ¥110 · ¥100 topped up · ¥10 granted".
 6. **Cost chart.** "This week" charts Claude's and Codex's use for each day of the current weekly window, stacked by model, in API-equivalent dollars. Dashed outlines are days still to come. Hover over a bar for that day's total; "Total" sums the week. Claude's 5-hour meter also shows what the current session has cost.
 7. **Notes.** A line such as "Key rejected" under a section explains a problem with that provider (see [Troubleshooting](#troubleshooting)).
-8. **Footer.** **Refresh** (⌘R) reads the local sources and asks Codex again. Claude's usage endpoint and the key providers are asked again too, unless they were asked in the last minute or are backing off after an error. **Providers** opens the Providers menu (step 5). **Quit** (⌘Q) quits UsageBar.
+8. **Footer.** **Refresh** (⌘R) reads the local sources and asks Codex again. Claude's usage endpoint and the key providers are asked again too, unless they were asked in the last minute or are backing off after a busy or down answer or a refused Keychain read. **Providers** opens the Providers menu (step 5). **Quit** (⌘Q) quits UsageBar.
 
 ### 5. Choose what's shown: the Providers menu
 
@@ -207,7 +207,7 @@ UsageBar keeps nothing else: no caches, cookies or other files. macOS may keep l
 
 **A row or the menu bar shows "—".** UsageBar has no reading for it yet, or couldn't read the answer.
 
-1. Click **Refresh** in the popover. Claude's usage endpoint or a key provider asked in the last minute, or backing off after an error, waits for its next turn.
+1. Click **Refresh** in the popover. Claude's usage endpoint or a key provider asked in the last minute, or backing off after a busy or down answer, waits for its next turn.
 2. For Claude: make sure the status line is installed (step 6) and send Claude Code a message, and allow the Keychain prompt (step 2). The weekly Fable window comes only from the usage endpoint, so it stays "—" if the Keychain read was denied.
 3. For Codex: open Codex once to check it's installed and signed in. To pick a specific `codex` binary, set `USAGEBAR_CODEX` to its path.
 4. For a key provider, read the note under its section (below).
@@ -219,7 +219,16 @@ UsageBar keeps nothing else: no caches, cookies or other files. macOS may keep l
 2. Paste a new key (for GitHub Copilot, check the token's permissions in step 6) and click **Test connection**.
 3. Click **Save** once it says "Connected".
 
-Other notes: "No API key saved" means there's no key to send (step 6). "api.deepseek.com answered HTTP 503" or "Couldn't read the answer from api.deepseek.com" (with that provider's host) means the provider had a problem; UsageBar tries again at the next poll, backing off from 10 minutes up to an hour while the provider is busy or down.
+Other notes, shown with that provider's host:
+
+- "No API key saved": there's no key to send (step 6).
+- "Couldn't read the API key from the Keychain": macOS refused to give UsageBar its saved key, usually because the Keychain prompt was denied or the Keychain is locked. UsageBar tries again after 10 minutes, backing off up to an hour, so the prompt doesn't keep coming back. To be asked at once, open **Providers › API key…** and save the key again.
+- "Couldn't reach api.deepseek.com": the request got no answer, often because the network isn't up yet after waking. UsageBar tries again at the next poll; **Refresh** works after a minute.
+- "api.deepseek.com answered HTTP 503" (or 429, or another 5xx): the provider is busy or down. UsageBar tries again after 10 minutes, backing off up to an hour, or as long as the provider asks.
+- "api.deepseek.com answered HTTP 404" (or another status), or "Couldn't read the answer from api.deepseek.com": the provider answered with an error or in a format UsageBar doesn't know; please [open an issue](https://github.com/jhnqch/usagebar/issues) if it lasts.
+- "Blocked a request outside api.deepseek.com": UsageBar refused to send the key to another host, which only a bug in that provider's code could cause; please [open an issue](https://github.com/jhnqch/usagebar/issues).
+
+The network, busy and down notes appear only when there's no earlier reading to show: once a provider has answered, a failure keeps its last reading, and "Updated … ago" says how old it is.
 
 **Keychain prompts after rebuilding.** The app is signed ad hoc, so every build (including each update) is a new app to macOS. The first time a rebuilt UsageBar reads a saved API key, macOS asks whether UsageBar may use `io.github.jhnqch.usagebar.api-key`. Enter your login password and click **Always Allow**. The Claude prompt in step 2 can also come back after Claude Code refreshes its login.
 
@@ -239,7 +248,7 @@ log stream --predicate 'subsystem == "io.github.jhnqch.usagebar"' --level info
 
 What each provider connects with and shows. To turn providers on and off, put them in the menu bar and add keys, see [Using UsageBar](#5-choose-whats-shown-the-providers-menu).
 
-Polling: key providers and Claude's usage endpoint are asked every 5 minutes and when you open the popover, at most once a minute each. Errors back off from 10 minutes up to an hour.
+Polling: key providers and Claude's usage endpoint are asked every 5 minutes and when you open the popover, at most once a minute each. Busy (429) and down (5xx) answers back off from 10 minutes up to an hour; a network error doesn't.
 
 | Provider | Connects with | Shows | API |
 |---|---|---|---|
