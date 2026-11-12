@@ -5,11 +5,13 @@ import Foundation
 /// from Finder gets a bare one). Waits on a dispatch thread, not the
 /// concurrency pool, since a build takes minutes.
 ///
-/// The child leads a process group of its own, so at its deadline the whole
-/// group is stopped: `git fetch`'s transport helper and the compilers a build
-/// starts as well as the command itself. First SIGTERM, then SIGKILL for
-/// whatever is left after a grace period. A process the command left behind
-/// that still holds its output open counts as the command still running.
+/// At its deadline the command is stopped with everything it started:
+/// `git fetch`'s transport helper, and the compilers a build starts. The
+/// child leads a process group of its own, which catches most of them, and
+/// its descendants are found by parent too, since SwiftPM starts compilers
+/// in groups of their own. First SIGTERM, then SIGKILL for whatever is left
+/// after a grace period. A process the command left behind that still
+/// holds its output open counts as the command still running.
 public struct ProcessCommandRunner: CommandRunner {
     /// Between the polite stop and the forced one.
     static let grace: TimeInterval = 2
@@ -49,6 +51,7 @@ public struct ProcessCommandRunner: CommandRunner {
         var atEnd = false
         var termSent: Date?
         var killSent: Date?
+        var stopping = Set<pid_t>()
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
 
         while exitStatus == nil || !atEnd {
@@ -71,10 +74,14 @@ public struct ProcessCommandRunner: CommandRunner {
             }
             let now = Date()
             if termSent == nil, let deadline, now >= deadline {
-                killpg(pid, SIGTERM)
+                // Found before anything is signalled: a process whose parent
+                // dies moves to launchd and can't be found by parent again.
+                stopping = descendants(of: [pid])
+                signal(SIGTERM, group: pid, processes: stopping)
                 termSent = now
             } else if let sent = termSent, killSent == nil, now.timeIntervalSince(sent) >= grace {
-                killpg(pid, SIGKILL)
+                stopping.formUnion(descendants(of: stopping.union([pid])))
+                signal(SIGKILL, group: pid, processes: stopping)
                 killSent = now
             } else if let sent = killSent, now.timeIntervalSince(sent) >= grace {
                 // Something outside the group holds the output open: stop
@@ -88,7 +95,7 @@ public struct ProcessCommandRunner: CommandRunner {
         }
         if termSent != nil {
             // The group may outlive its leader; nothing of it is left behind.
-            killpg(pid, SIGKILL)
+            signal(SIGKILL, group: pid, processes: stopping)
         }
 
         return CommandResult(status: exitStatus.map(shellStatus) ?? -1, output: String(decoding: output, as: UTF8.self),
@@ -133,6 +140,33 @@ public struct ProcessCommandRunner: CommandRunner {
             return nil
         }
         return pid
+    }
+
+    private static func signal(_ signal: Int32, group: pid_t, processes: Set<pid_t>) {
+        killpg(group, signal)
+        for process in processes { kill(process, signal) }
+    }
+
+    /// Every process descended from `roots`, by parent process id.
+    static func descendants(of roots: Set<pid_t>) -> Set<pid_t> {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0 else { return [] }
+        let stride = MemoryLayout<kinfo_proc>.stride
+        // Room for processes started between the two calls.
+        var table = [kinfo_proc](repeating: kinfo_proc(), count: size / stride + 64)
+        size = table.count * stride
+        guard sysctl(&mib, 4, &table, &size, nil, 0) == 0 else { return [] }
+        var children: [pid_t: [pid_t]] = [:]
+        for entry in table.prefix(size / stride) {
+            children[entry.kp_eproc.e_ppid, default: []].append(entry.kp_proc.p_pid)
+        }
+        var found = Set<pid_t>()
+        var queue = Array(roots)
+        while let next = queue.popLast() {
+            for child in children[next] ?? [] where found.insert(child).inserted { queue.append(child) }
+        }
+        return found
     }
 
     /// A wait status as a shell reports it: the exit code, or 128 plus the

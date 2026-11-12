@@ -65,6 +65,20 @@ struct ProcessCommandRunnerTests {
         #expect(await isGone(child))
     }
 
+    @Test("a process the command started in a process group of its own, as SwiftPM starts compilers, is stopped too")
+    func otherGroup() async throws {
+        let dir = try TempDirectory()
+        defer { dir.remove() }
+        let pidFile = dir.file("child.pid")
+        // Job control puts each background job in a group of its own; a second level stands in for swift-build's compiler.
+        let script = "set -m; bash -c 'sleep 30 & echo $! > \"$1\"; wait' x \"$1\" & wait"
+        let result = await runner.run(Command("/bin/bash", ["-c", script, "x", pidFile], in: dir.path, timeout: 0.5))
+        #expect(result.timedOut)
+        let child = try #require(Int32(try String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        #expect(getpgid(child) != getpgid(getpid()))
+        #expect(await isGone(child))
+    }
+
     @Test("a command that ignores the polite stop is killed")
     func ignoresTerm() async {
         let started = Date()
