@@ -42,6 +42,8 @@ public struct CodexAppServerConversation: Sendable {
     private var initializeID: Int?
     /// When `initialize` was sent, until it's answered.
     private var initializeSentAt: Date?
+    /// `initialize` came back with an error: the server will never be ready.
+    private var handshakeFailed = false
     /// Unanswered reads and when each was sent.
     private var pendingReads: [Int: Date] = [:]
     /// True once the `initialize` handshake has completed.
@@ -67,13 +69,15 @@ public struct CodexAppServerConversation: Sendable {
 
     /// The method of a request app-server has left unanswered for
     /// `answerTimeout` by `now`, or nil. A server that stops answering is
-    /// as good as dead: the caller restarts it. A clock set back behind a
+    /// as good as dead: the caller restarts it. So is one that answered
+    /// `initialize` with an error, at once. A clock set back behind a
     /// request counts as overdue too, rather than waiting out the gap.
     public func overdueRequest(at now: Date) -> String? {
         func overdue(_ sentAt: Date) -> Bool {
             let waited = now.timeIntervalSince(sentAt)
             return waited < 0 || waited >= Self.answerTimeout
         }
+        if handshakeFailed { return "initialize" }
         if let initializeSentAt, overdue(initializeSentAt) { return "initialize" }
         return pendingReads.values.contains(where: overdue) ? "account/rateLimits/read" : nil
     }
@@ -106,6 +110,7 @@ public struct CodexAppServerConversation: Sendable {
             initializeID = nil
             initializeSentAt = nil
             if let error = message.errorMessage {
+                handshakeFailed = true
                 return Step(failure: "initialize failed: \(error)")
             }
             isReady = true

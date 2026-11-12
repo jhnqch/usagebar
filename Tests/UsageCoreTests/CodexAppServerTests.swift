@@ -127,6 +127,14 @@ struct AppServerWatchdogTests {
         #expect(conversation.overdueRequest(at: launched + 30) == "initialize")
     }
 
+    @Test("a server that answers initialize with an error is overdue at once, so it's restarted")
+    func handshakeFailed() {
+        var conversation = CodexAppServerConversation()
+        _ = conversation.start(at: launched)
+        _ = conversation.receive(Data(#"{"id":1,"error":{"code":-32600,"message":"bad client"}}"#.utf8), at: launched + 1)
+        #expect(conversation.overdueRequest(at: launched + 1) == "initialize")
+    }
+
     @Test("an answered conversation has nothing overdue")
     func answered() throws {
         #expect(try ready().overdueRequest(at: launched + 3600) == nil)
