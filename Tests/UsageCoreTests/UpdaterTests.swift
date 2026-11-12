@@ -237,6 +237,54 @@ struct UpdateBannerTests {
         #expect(result9?.tag == "v1.1.0")
     }
 
+    @Test("Update clicked while a check is underway installs, and the check's answer leaves it running")
+    func installDuringCheck() {
+        var updater = Updater(build: fromCheckout)
+        _ = updater.checked(found("v1.1.0"))
+        // The popover opens, a check starts, and Update is clicked before GitHub answers.
+        let checkStarted1 = updater.startCheck(at: now + 2 * day)
+        #expect(checkStarted1)
+        let installed1 = updater.startInstall()
+        #expect(installed1?.tag == "v1.1.0")
+        #expect(updater.banner?.style == .working)
+        let action1 = updater.finishCheck(found("v1.1.0"), at: now + 2 * day)
+        #expect(action1 == nil)
+        #expect(updater.banner?.title == "Updating to v1.1.0…")
+        let action2 = updater.finishCheck(.noRelease, at: now + 2 * day)
+        #expect(action2 == nil)
+        #expect(updater.banner?.style == .working)
+    }
+
+    @Test("Try again clicked while a check is underway installs")
+    func retryDuringCheck() {
+        var updater = Updater(build: fromCheckout)
+        _ = updater.checked(found("v1.1.0"))
+        _ = updater.startInstall()
+        updater.fail(UpdateFailure(message: "The build failed.", logPath: nil))
+        let checkStarted2 = updater.startCheck(at: now + 2 * day)
+        #expect(checkStarted2)
+        let installed2 = updater.startInstall()
+        #expect(installed2?.tag == "v1.1.0")
+        #expect(updater.banner?.style == .working)
+    }
+
+    @Test("an update stopped at a deadline shows as failed with its log, and checks work again")
+    func timedOut() throws {
+        var updater = Updater(build: fromCheckout)
+        _ = updater.checked(found("v1.1.0"))
+        _ = updater.startInstall()
+        updater.advance(.fetching)
+        #expect(!updater.menu(clock: clock).canCheckNow)
+        updater.fail(UpdateFailure(message: "Fetching from origin took longer than 5 minutes, so it was stopped.", logPath: "~/update.log"))
+        let banner = try #require(updater.banner)
+        #expect(banner.style == .failed)
+        #expect(banner.logPath == "~/update.log")
+        #expect(updater.menu(clock: clock).canCheckNow)
+        #expect(updater.isCheckDue(at: now + 2 * day))
+        let checkStarted3 = updater.startCheck(at: now + 2 * day)
+        #expect(checkStarted3)
+    }
+
     @Test("no check runs while installing")
     func noCheckWhileInstalling() {
         var updater = Updater(build: fromCheckout)
