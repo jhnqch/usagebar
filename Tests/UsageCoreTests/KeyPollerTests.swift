@@ -105,6 +105,23 @@ final class MemoryKeyStore: KeyStore, @unchecked Sendable {
     }
 }
 
+/// A Keychain that refuses every read, as when the user denies its prompt.
+final class DeniedKeyStore: KeyStore, @unchecked Sendable {
+    struct Denied: Error {}
+    private let lock = NSLock()
+    private var count = 0
+    var reads: Int { lock.withLock { count } }
+
+    func key(for id: String) async throws -> String? {
+        lock.withLock { count += 1 }
+        throw Denied()
+    }
+
+    func hasKey(for id: String) -> Bool { true }
+    func save(_ key: String, for id: String) throws {}
+    func removeKey(for id: String) throws {}
+}
+
 /// Records every request and answers from a script, then with the last answer.
 final class FakeTransport: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()
@@ -282,6 +299,28 @@ struct KeyPollerTests {
         #expect(section.note == nil)
     }
 
+    @Test("with no reading to keep, a network error, 429 or 5xx says what happened under the dashes", arguments: [
+        (PollOutcome.networkError, "Couldn't reach api.example.com"),
+        (.response(status: 429, body: Data()), "api.example.com answered HTTP 429"),
+        (.response(status: 503, body: Data("<html>".utf8)), "api.example.com answered HTTP 503"),
+    ])
+    func transientFailureFirst(outcome: PollOutcome, note: String) async throws {
+        let transport = FakeTransport(outcome)
+        let poller = poller(transport: transport)
+        await poller.poll(.timer)
+        let section = try section(poller)
+        #expect(creditText(section) == "—")
+        #expect(section.note == note)
+        #expect(section.updatedText == nil)
+
+        // The first good answer replaces the note.
+        transport.answer(.response(status: 200, body: goodBody))
+        clock.now += 3600
+        await poller.poll(.timer)
+        #expect(creditText(try self.section(poller)) == "$12.40 left of $20")
+        #expect(try self.section(poller).note == nil)
+    }
+
     @Test("a changed or unreadable answer turns the rows into dashes")
     func unreadable() async throws {
         let poller = poller(transport: FakeTransport(.response(status: 200, body: goodBody), .response(status: 200, body: Data(#"{"renamed": 1}"#.utf8))))
@@ -309,6 +348,37 @@ struct KeyPollerTests {
         await poller.poll(.timer)
         #expect(transport.requests.isEmpty)
         #expect(try section(poller).note == "No API key saved")
+    }
+
+    @Test("a Keychain read that throws says so, sends nothing, and backs off rather than reading again at every popover")
+    func keychainDenied() async throws {
+        let store = DeniedKeyStore()
+        let transport = FakeTransport(.response(status: 200, body: goodBody))
+        let clock = clock
+        let poller = KeyPoller<TestKeyAPI>(store: store, transport: transport, now: { clock.now })
+        await poller.poll(.popover)
+        #expect(transport.requests.isEmpty)
+        let section = try section(poller)
+        #expect(creditText(section) == "—")
+        #expect(section.note == "Couldn't read the API key from the Keychain")
+        #expect(section.note != "No API key saved")
+        #expect(due(poller, .popover) == 600)
+        clock.now += 60
+        #expect(await poller.poll(.popover) == false)
+        #expect(store.reads == 1)
+        clock.now += 540
+        await poller.poll(.popover)
+        #expect(store.reads == 2)
+        #expect(due(poller, .timer) == 1200)
+    }
+
+    @Test("Test connection with nothing typed and a Keychain read that throws says the key couldn't be read")
+    func testConnectionKeychainDenied() async {
+        let transport = FakeTransport(.response(status: 200, body: goodBody))
+        let poller = KeyPoller<TestKeyAPI>(store: DeniedKeyStore(), transport: transport)
+        #expect(await poller.testConnection(key: nil) == .failed("Couldn't read the API key from the Keychain"))
+        #expect(transport.requests.isEmpty)
+        #expect(await poller.testConnection(key: "typed-fake-key") == .connected)
     }
 
     // MARK: Where the key goes
@@ -396,12 +466,13 @@ struct KeyPollerTests {
         #expect(transport.requests.count == 2)
     }
 
-    @Test("429, 5xx and network errors back off 10 minutes doubling to an hour; a good answer ends it")
+    @Test("429 and 5xx back off 10 minutes doubling to an hour; a good answer ends it")
     func backoff() async {
         let transport = FakeTransport(.response(status: 429, body: Data()))
         let poller = poller(transport: transport)
         var waits: [TimeInterval?] = []
-        for outcome in [PollOutcome.response(status: 429, body: Data()), .response(status: 500, body: Data()), .networkError, .response(status: 502, body: Data()), .networkError] {
+        for outcome in [PollOutcome.response(status: 429, body: Data()), .response(status: 500, body: Data()), .response(status: 502, body: Data()),
+                        .response(status: 503, body: Data()), .response(status: 429, body: Data())] {
             transport.answer(outcome)
             await poller.poll(.timer)
             let wait = due(poller, .popover)
@@ -414,6 +485,39 @@ struct KeyPollerTests {
         await poller.poll(.timer)
         #expect(due(poller, .timer) == 300)
         #expect(due(poller, .popover) == 60)
+    }
+
+    @Test("a network error doesn't back off: the next popover poll is due a minute later, and the last reading stays")
+    func networkErrorKeepsSchedule() async throws {
+        let transport = FakeTransport(.response(status: 200, body: goodBody), .networkError)
+        let poller = poller(transport: transport)
+        await poller.poll(.timer)
+        clock.now += 300
+        await poller.poll(.timer)
+        #expect(due(poller, .popover) == 60)
+        #expect(due(poller, .timer) == 300)
+        #expect(creditText(try section(poller)) == "$12.40 left of $20")
+        #expect(try section(poller).note == nil)
+        // Refresh right after waking, once the network is up, asks again.
+        transport.answer(.response(status: 200, body: Data(#"{"balance": "11.00", "limit": 20}"#.utf8)))
+        clock.now += 60
+        #expect(await poller.poll(.popover))
+        #expect(creditText(try section(poller)) == "$11 left of $20")
+    }
+
+    @Test("a network error between back-offs doesn't end them: the next 5xx keeps doubling")
+    func networkErrorDuringBackoff() async {
+        let transport = FakeTransport(.response(status: 503, body: Data()))
+        let poller = poller(transport: transport)
+        await poller.poll(.timer)
+        clock.now += 600
+        transport.answer(.networkError)
+        await poller.poll(.timer)
+        #expect(due(poller, .popover) == 60)
+        clock.now += 300
+        transport.answer(.response(status: 503, body: Data()))
+        await poller.poll(.timer)
+        #expect(due(poller, .timer) == 1200)
     }
 
     @Test("a Retry-After longer than the backoff is honoured, up to an hour")

@@ -38,6 +38,17 @@ struct ReadmeTests {
         }
     }
 
+    @Test("Troubleshooting quotes every note a key provider's section can show")
+    func keyProviderNotes() throws {
+        let troubleshooting = try section("### Troubleshooting")
+        let problems: [KeyProblem] = [.rejected, .noKey, .keychain, .unreadable, .http(503), .unreachable, .blocked]
+        for problem in problems {
+            let provider = KeyProvider<DeepSeekAPI>(problem: problem)
+            let note = try #require(UsageEngine.snapshot(from: Readings([provider]), now: now, timeZone: losAngeles)["deepseek"]?.note)
+            #expect(troubleshooting.contains("\"\(note)\""), "Troubleshooting doesn't quote \(note)")
+        }
+    }
+
     @Test("the guide names the Providers menu's items as the menu shows them")
     func menuItems() throws {
         let guide = try section("### 5. Choose what's shown: the Providers menu")
