@@ -23,9 +23,10 @@ public enum CodexRollout {
     /// Reads one rollout file in order. Each response's usage is the change
     /// in the running total since the last token count, so a count Codex
     /// sends again adds nothing. Where there's no earlier total (a file's
-    /// first count, which may carry usage from before the file), or a count
-    /// in it went down (it started over), the response's own usage counts.
-    /// So it does where the running total is missing, unreadable or lacks a
+    /// first count, which may carry usage from before the file), the
+    /// response's own usage counts, or nothing without it: the total is only
+    /// the baseline. Where a count in it went down (it started over), the
+    /// response's own usage counts, else the new total. So it does where the running total is missing, unreadable or lacks a
     /// count the last one had; the response's usage then moves the missing
     /// counts on, so the next total doesn't count it again.
     public struct Parser: UsageLogParser {
@@ -84,6 +85,10 @@ public enum CodexRollout {
                 } else if let total {
                     if let previous = self.total, total.covers(previous) {
                         usage = total.usage.since(previous.usage)
+                    } else if self.total == nil {
+                        // A file's first total may carry usage from before
+                        // the file: only the response's own usage is its.
+                        usage = last
                     } else {
                         usage = last ?? total.usage
                     }
@@ -229,7 +234,8 @@ public enum CodexRollout {
         private struct Unreadable: Error {}
 
         /// Unreadable unless it has input and output counts and every count
-        /// it has is a whole number, never negative.
+        /// it has is a whole number, never negative. Each is clamped to
+        /// `TokenCounts.maximum`.
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: Usage.CodingKeys.self)
             input = try c.decode(Int.self, forKey: .input)
@@ -237,6 +243,10 @@ public enum CodexRollout {
             cacheWrite = try c.decodeIfPresent(Int.self, forKey: .cacheWrite)
             output = try c.decode(Int.self, forKey: .output)
             guard min(input, cached ?? 0, cacheWrite ?? 0, output) >= 0 else { throw Unreadable() }
+            input = TokenCounts.clamped(input)
+            cached = cached.map(TokenCounts.clamped)
+            cacheWrite = cacheWrite.map(TokenCounts.clamped)
+            output = TokenCounts.clamped(output)
         }
     }
 

@@ -24,7 +24,7 @@ enum UsageCost {
             return nil
         }
         let entries = usage.filter { start <= $0.timestamp && $0.timestamp <= now }
-        return "\(Total(entries, prices: prices).text) this session"
+        return "\(Total(entries, prices: ModelPrices(entries, table: prices)).text) this session"
     }
 
     static let week: TimeInterval = 7 * 24 * 60 * 60
@@ -32,7 +32,7 @@ enum UsageCost {
     /// The weekly chart. With a weekly reading it covers that window: its
     /// reset minus 7 days, to its reset (rolled on a week at a time once the
     /// reset has passed). Without one, the last 7 local days.
-    static func weeklyChart(_ usage: [UsageEntry], weekly: LimitReading?, clock: Clock, prices: PriceTable) -> CostChart {
+    static func weeklyChart(_ usage: [UsageEntry], weekly: LimitReading?, clock: Clock, prices table: PriceTable) -> CostChart {
         let now = clock.now
         let calendar = clock.calendar
         let window: DateInterval
@@ -52,6 +52,7 @@ enum UsageCost {
         }
 
         let entries = usage.filter { window.start <= $0.timestamp && $0.timestamp < window.end }
+        let prices = ModelPrices(entries, table: table)
         let models = Dictionary(grouping: entries, by: \.model)
         let series = seriesSlots(for: Array(models.keys), prices: prices)
 
@@ -92,9 +93,9 @@ enum UsageCost {
         )
     }
 
-    private static func legendRow(_ model: String, _ entries: [UsageEntry], series: Int?, prices: PriceTable) -> CostChart.LegendRow {
+    private static func legendRow(_ model: String, _ entries: [UsageEntry], series: Int?, prices: ModelPrices) -> CostChart.LegendRow {
         let total = Total(entries, prices: prices)
-        let price = prices.price(for: model)
+        let price = prices[model]
         return CostChart.LegendRow(
             model: model,
             name: price?.name ?? model,
@@ -153,9 +154,9 @@ enum UsageCost {
     /// Colour slots for the priced models in a chart: each model line's
     /// newest model present gets the line's slot; any other gets the next
     /// extra slot, in price-table order. Models with no price get none.
-    private static func seriesSlots(for models: [String], prices: PriceTable) -> [String: Int] {
-        let priced = models.compactMap { model in prices.price(for: model).map { (model: model, price: $0) } }
-        let order = Dictionary(prices.models.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+    private static func seriesSlots(for models: [String], prices: ModelPrices) -> [String: Int] {
+        let priced = models.compactMap { model in prices[model].map { (model: model, price: $0) } }
+        let order = Dictionary(prices.table.models.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         var slots: [String: Int] = [:]
         var takenFamilies: Set<String> = []
         var nextExtra = CostChart.extraSeries.lowerBound
@@ -171,15 +172,35 @@ enum UsageCost {
         return slots
     }
 
+    /// Each model's price, looked up once per model id. `PriceTable.price(for:)`
+    /// normalises any id that isn't a table key (a dated or tagged id, an
+    /// unknown model), too slow to repeat for every reply of a chart.
+    struct ModelPrices {
+        let table: PriceTable
+        private let byModel: [String: ModelPrice]
+
+        init(_ entries: [UsageEntry], table: PriceTable) {
+            self.table = table
+            var byModel: [String: ModelPrice] = [:]
+            for model in Set(entries.map(\.model)) {
+                byModel[model] = table.price(for: model)
+            }
+            self.byModel = byModel
+        }
+
+        /// The price for a model among the entries, or nil when it has none.
+        subscript(model: String) -> ModelPrice? { byModel[model] }
+    }
+
     /// Dollars and tokens for some replies. Models missing from the price
     /// table add tokens but no dollars.
     struct Total {
         var dollars: Double = 0
         var tokens: Int = 0
 
-        init(_ entries: [UsageEntry], prices: PriceTable) {
+        init(_ entries: [UsageEntry], prices: ModelPrices) {
             for entry in entries {
-                dollars += prices.price(for: entry.model)?.dollars(entry) ?? 0
+                dollars += prices[entry.model]?.dollars(entry) ?? 0
                 tokens += entry.tokens.total
             }
         }

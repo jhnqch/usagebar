@@ -93,6 +93,11 @@ public struct PriceTable: Equatable, Sendable {
         byID = Dictionary(models.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// Called with each model id `price(for:)` has to normalise because it
+    /// isn't a table key: the slow path, which callers over many entries
+    /// should take once per id. For tests.
+    @TaskLocal public static var normalizedLookup: (@Sendable (String) -> Void)?
+
     public static func == (lhs: PriceTable, rhs: PriceTable) -> Bool {
         lhs.models == rhs.models
     }
@@ -103,6 +108,7 @@ public struct PriceTable: Equatable, Sendable {
     /// finds its model.
     public func price(for model: String) -> ModelPrice? {
         if let exact = byID[model] { return exact }
+        Self.normalizedLookup?(model)
         var id = model.lowercased()
         if let bracket = id.firstIndex(of: "[") { id = String(id[..<bracket]) }
         if let claude = id.range(of: "claude-") { id = String(id[claude.lowerBound...]) }

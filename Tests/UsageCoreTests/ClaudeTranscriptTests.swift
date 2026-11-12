@@ -67,6 +67,22 @@ struct ClaudeTranscriptTests {
         transcriptLine(id: id, at: "2026-10-10T14:00:00-07:00", output: output) + Data("\n".utf8)
     }
 
+    @Test("a line with an absurd token count doesn't crash the chart or lose the rest of the file")
+    func absurdCount() throws {
+        // A corrupt line near Int.max in two counts would overflow any sum.
+        let absurd = 9_223_372_036_854_775_000
+        let lines = [
+            transcriptLine(id: "msg_bad", at: "2026-10-10T10:00:00-07:00", read: absurd, output: absurd),
+            transcriptLine(id: "msg_ok", at: "2026-10-10T11:00:00-07:00", output: 25_000),
+        ]
+        let entries = ClaudeTranscript.entries(in: lines.reduce(Data()) { $0 + $1 + Data("\n".utf8) })
+        #expect(entries.map(\.id) == ["msg_bad", "msg_ok"])
+        #expect(entries.last?.tokens == TokenCounts(output: 25_000))
+        let chart = try chart(entries + entries.map { var copy = $0; copy.id += "-copy"; return copy })
+        #expect(chart.legend.count == 1)
+        #expect(snapshot(claude: claude(), claudeUsage: entries).claude.meters[0].usageText != nil)
+    }
+
     @Test("a rescan reads only the bytes added since the last scan")
     func readsOnlyNewBytes() {
         var scan = TranscriptScan()

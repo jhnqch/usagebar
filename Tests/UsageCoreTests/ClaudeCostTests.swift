@@ -97,6 +97,18 @@ struct ClaudeCostTests {
         #expect(snapshot(claude: claude(), claudeUsage: usage).claude.meters[0].usageText == "$3.60 · 150K tokens this session")
     }
 
+    @Test(
+        "fast mode on Fable 5.2 and Mythos 5.2 is $16 / $80, cache reads 0.025x",
+        arguments: ["claude-fable-5-2", "claude-mythos-5-2[1m]"]
+    )
+    func fastModeFiveTwo(model: String) {
+        // 100,000 input $1.60 + 1,000,000 cache reads $0.40 + 50,000 output
+        // $4.00 = $6.00.
+        let usage = claudeUsage([transcriptLine(id: "msg_1", at: "2026-10-10T14:00:00-07:00", model: model,
+                                                input: 100_000, read: 1_000_000, output: 50_000, speed: "fast")])
+        #expect(snapshot(claude: claude(), claudeUsage: usage).claude.meters[0].usageText == "$6.00 · 1.1M tokens this session")
+    }
+
     @Test("US-only inference costs 1.1x, on every kind of token")
     func usOnlyInference() {
         // 100,000 1-hour writes $0.80 + 50,000 output $1.00 = $1.80, x 1.1 = $1.98.
@@ -124,7 +136,11 @@ struct ClaudeCostTests {
         "the price table has every current Claude model, at the pricing page's rates",
         arguments: [
             // id, input, 5m write, 1h write, cache read, output ($ per million tokens)
-            ("claude-fable-5-1", 10.0, 12.5, 20.0, 0.25, 50.0),
+            ("claude-fable-5-2", 8.0, 10.0, 16.0, 0.20, 40.0),
+            ("claude-mythos-5-2", 8, 10, 16, 0.20, 40),
+            ("claude-fable-5-2-20261101", 8, 10, 16, 0.20, 40),
+            ("claude-mythos-5-2[1m]", 8, 10, 16, 0.20, 40),
+            ("claude-fable-5-1", 10, 12.5, 20, 0.25, 50),
             ("claude-mythos-5-1", 10, 12.5, 20, 0.25, 50),
             ("claude-fable-5", 10, 12.5, 20, 1, 50),
             ("claude-opus-5-5", 4, 5, 8, 0.20, 20),

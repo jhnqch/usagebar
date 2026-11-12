@@ -134,7 +134,8 @@ struct CodexRolloutTests {
         ]])
         #expect(dropped.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 3))
 
-        // An older Codex that never logs cache writes.
+        // An older Codex that never logs cache writes. Its first total, with
+        // no response usage, is only the baseline.
         let never = codexUsage([[
             Rollout.sessionMeta(id: "thread-2", at: "2026-10-09T10:00:00-07:00"),
             Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
@@ -142,7 +143,7 @@ struct CodexRolloutTests {
             Rollout.tokenCount(at: "2026-10-09T10:00:06-07:00", total: total(input: 1_000, cached: 800), last: nil),
             Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00", total: total(input: 2_000, cached: 1_600), last: nil),
         ]])
-        #expect(never.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 2))
+        #expect(never.map(\.tokens) == [TokenCounts(input: 200, cacheRead: 800)])
     }
 
     @Test("a running total that loses a count for good counts each response once, and nothing for a count sent again")
@@ -181,6 +182,41 @@ struct CodexRolloutTests {
                                last: codexTokens(input: 40_000, cached: 30_000, output: 400)),
         ]])
         #expect(entries.map(\.tokens) == [TokenCounts(input: 10_000, cacheRead: 30_000, output: 400)])
+    }
+
+    @Test("a file whose first running total comes without the response's own usage counts nothing for it; later responses count from it")
+    func carriedTotalOnly() throws {
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-2", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 900_000, output: 9_000), last: nil),
+            Rollout.tokenCount(at: "2026-10-09T10:01:00-07:00", total: codexTokens(input: 940_000, cached: 30_000, output: 9_400),
+                               last: nil),
+        ]])
+        #expect(entries.map(\.tokens) == [TokenCounts(input: 10_000, cacheRead: 30_000, output: 400)])
+        #expect(entries.map(\.id) == ["thread-2#0"])
+    }
+
+    @Test("a token count near Int.max doesn't crash the chart or lose the rest of the file")
+    func absurdCount() throws {
+        // Half of Int.max, so the line's own `total_tokens` still fits; moving
+        // the running total on by the next response would overflow.
+        let absurd = Int.max / 2
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-1", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 1_000, output: 10),
+                               last: codexTokens(input: 1_000, output: 10)),
+            Rollout.tokenCount(at: "2026-10-09T10:01:00-07:00", total: codexTokens(input: absurd, output: absurd),
+                               last: codexTokens(input: absurd, output: absurd)),
+            // No running total: the response's own usage moves it on.
+            Rollout.tokenCount(at: "2026-10-09T10:02:00-07:00", total: nil, last: codexTokens(input: 500, output: 5)),
+        ]])
+        #expect(entries.count == 3)
+        #expect(entries.first?.tokens == TokenCounts(input: 1_000, output: 10))
+        #expect(entries.last?.tokens == TokenCounts(input: 500, output: 5))
+        let chart = try chart(entries + entries.map { var copy = $0; copy.id += "-copy"; return copy })
+        #expect(chart.legend.count == 1)
     }
 
     @Test("missing, extra and mistyped fields cost only what they carry; unreadable lines are skipped")
