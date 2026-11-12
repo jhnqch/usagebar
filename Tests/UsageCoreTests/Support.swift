@@ -131,7 +131,7 @@ struct Replay {
 /// Replays app-server stdout lines through a fresh conversation, all received at `time`.
 func replay(_ lines: [Data], at time: Date) -> Replay {
     var conversation = CodexAppServerConversation()
-    var result = Replay(sent: conversation.start())
+    var result = Replay(sent: conversation.start(at: time))
     for line in lines {
         let step = conversation.receive(line, at: time)
         result.sent += step.send

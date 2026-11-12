@@ -131,7 +131,7 @@ extension CodexProvider {
         /// The reading the app would hold after these messages.
         var limits: CodexLimits? {
             var conversation = CodexAppServerConversation()
-            _ = conversation.start()
+            _ = conversation.start(at: receivedAt)
             return messages.compactMap(\.value).reduce(nil) { latest, message in
                 switch conversation.receive(message, at: receivedAt).reading {
                 case let .updated(limits): limits
