@@ -22,7 +22,7 @@ tag="${1:-}"
 [[ $tag =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
   || die "usage: scripts/release.sh vX.Y.Z (got '${tag}'; a release tag is vX.Y.Z, e.g. v1.2.0)"
 command -v gh >/dev/null || die "needs the GitHub CLI: https://cli.github.com"
-gh auth status --hostname github.com >/dev/null 2>&1 || die "gh isn't signed in to github.com; run gh auth login first"
+gh auth status --active --hostname github.com >/dev/null 2>&1 || die "gh isn't signed in to github.com; run gh auth login first"
 
 repository="$(scripts/build-info.sh | sed -n 's/^repository=//p')"
 [ -n "$repository" ] && git config --get remote.origin.url >/dev/null || die "origin isn't a GitHub repository"

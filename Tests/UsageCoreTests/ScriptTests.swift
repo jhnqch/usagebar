@@ -132,7 +132,10 @@ struct ReleaseScriptTests {
                 #!/bin/sh
                 state="$(dirname "$0")/.."
                 case "$1 $2" in
-                  "auth status") [ ! -e "$state/gh-signed-out" ] || { echo "You are not logged into any GitHub hosts." >&2; exit 1; } ;;
+                  "auth status")
+                    [ ! -e "$state/gh-signed-out" ] || { echo "You are not logged into any GitHub hosts." >&2; exit 1; }
+                    # An expired token for another, inactive account fails only a check of every account.
+                    case " $* " in *" --active "*) ;; *) [ ! -e "$state/gh-stale-inactive" ] || exit 1 ;; esac ;;
                   "release view") [ -e "$state/gh-released" ] || { echo "release not found" >&2; exit 1; } ;;
                   "release create")
                     [ ! -e "$state/gh-fails" ] || { echo "HTTP 401: Bad credentials" >&2; exit 1; }
@@ -239,6 +242,16 @@ struct ReleaseScriptTests {
         #expect(result.output.contains("gh auth login"), "\(result.output)")
         #expect(!repo.hasTag("v1.2.3", in: repo.work))
         #expect(!repo.hasTag("v1.2.3", in: repo.origin))
+    }
+
+    @Test("an expired inactive gh account doesn't block a release by the active one")
+    func staleInactiveAccount() throws {
+        let repo = try Repo()
+        defer { repo.root.remove() }
+        try repo.gh("gh-stale-inactive")
+        let result = repo.release("v1.2.3")
+        #expect(result.status == 0, "\(result.output)")
+        #expect(repo.hasTag("v1.2.3", in: repo.origin))
     }
 
     @Test("a rerun after the release step failed creates the release from the tag already pushed, without retagging")
