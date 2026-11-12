@@ -134,7 +134,8 @@ struct CodexRolloutTests {
         ]])
         #expect(dropped.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 3))
 
-        // An older Codex that never logs cache writes.
+        // An older Codex that never logs cache writes. Its first total, with
+        // no response usage, is only the baseline.
         let never = codexUsage([[
             Rollout.sessionMeta(id: "thread-2", at: "2026-10-09T10:00:00-07:00"),
             Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
@@ -142,7 +143,7 @@ struct CodexRolloutTests {
             Rollout.tokenCount(at: "2026-10-09T10:00:06-07:00", total: total(input: 1_000, cached: 800), last: nil),
             Rollout.tokenCount(at: "2026-10-09T10:00:09-07:00", total: total(input: 2_000, cached: 1_600), last: nil),
         ]])
-        #expect(never.map(\.tokens) == Array(repeating: TokenCounts(input: 200, cacheRead: 800), count: 2))
+        #expect(never.map(\.tokens) == [TokenCounts(input: 200, cacheRead: 800)])
     }
 
     @Test("a running total that loses a count for good counts each response once, and nothing for a count sent again")
@@ -181,6 +182,19 @@ struct CodexRolloutTests {
                                last: codexTokens(input: 40_000, cached: 30_000, output: 400)),
         ]])
         #expect(entries.map(\.tokens) == [TokenCounts(input: 10_000, cacheRead: 30_000, output: 400)])
+    }
+
+    @Test("a file whose first running total comes without the response's own usage counts nothing for it; later responses count from it")
+    func carriedTotalOnly() throws {
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-2", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 900_000, output: 9_000), last: nil),
+            Rollout.tokenCount(at: "2026-10-09T10:01:00-07:00", total: codexTokens(input: 940_000, cached: 30_000, output: 9_400),
+                               last: nil),
+        ]])
+        #expect(entries.map(\.tokens) == [TokenCounts(input: 10_000, cacheRead: 30_000, output: 400)])
+        #expect(entries.map(\.id) == ["thread-2#0"])
     }
 
     @Test("a token count near Int.max doesn't crash the chart or lose the rest of the file")
