@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 import UsageCore
 
@@ -70,6 +71,30 @@ struct ClaudeChartTests {
             model: "claude-zeta-1", name: "claude-zeta-1", valueText: "no price · 1.2M tokens", series: nil
         ))
         #expect(chart.totalText == "$2.00 · 1.3M tokens")
+    }
+
+    @Test("a chart looks up each model id that isn't a table key once, however many replies use it")
+    func lookupOncePerModel() throws {
+        // Dated and unknown ids take the slow path (normalising the id);
+        // a chart over many replies does it once per distinct id, not per
+        // reply, per day and per total.
+        var lines: [Data] = []
+        for day in 6...10 {
+            for hour in 10..<20 {
+                let at = String(format: "2026-10-%02dT%02d:00:00-07:00", day, hour)
+                lines.append(transcriptLine(id: "msg_d\(day)h\(hour)", at: at, model: "claude-haiku-4-5-20251001", output: 1_000))
+                lines.append(transcriptLine(id: "msg_z\(day)h\(hour)", at: at, model: "claude-zeta-1", output: 1_000))
+                lines.append(transcriptLine(id: "msg_o\(day)h\(hour)", at: at, output: 1_000))
+            }
+        }
+        let looked = Mutex<[String]>([])
+        let record: @Sendable (String) -> Void = { id in looked.withLock { $0.append(id) } }
+        let weekly: CostChart = try PriceTable.$normalizedLookup.withValue(record) {
+            try self.chart(lines, limits: claude(fiveHour: nil))
+        }
+        #expect(looked.withLock { $0.sorted() } == ["claude-haiku-4-5-20251001", "claude-zeta-1"])
+        // Still priced as before: 50 Haiku 4.5 replies at $5 per million output.
+        #expect(weekly.legend.first { $0.model == "claude-haiku-4-5-20251001" }?.valueText == "$0.25 · 50K tokens")
     }
 
     @Test("replies are bucketed by local calendar day, not UTC, either side of midnight")
