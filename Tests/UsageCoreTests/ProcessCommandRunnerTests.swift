@@ -79,6 +79,18 @@ struct ProcessCommandRunnerTests {
         #expect(await isGone(child))
     }
 
+    @Test("a process in a group of its own whose parent has already exited is stopped too")
+    func orphanInOtherGroup() async throws {
+        let dir = try TempDirectory()
+        defer { dir.remove() }
+        let pidFile = dir.file("child.pid")
+        let result = await runner.run(Command("/bin/bash", ["-c", "set -m; sleep 30 & echo $! > \"$1\"; exit 0", "x", pidFile],
+                                              in: dir.path, timeout: 0.5))
+        #expect(result.timedOut)
+        let child = try #require(Int32(try String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        #expect(await isGone(child))
+    }
+
     @Test("a command that ignores the polite stop is killed")
     func ignoresTerm() async {
         let started = Date()

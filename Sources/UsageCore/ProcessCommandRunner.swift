@@ -7,14 +7,16 @@ import Foundation
 ///
 /// At its deadline the command is stopped with everything it started:
 /// `git fetch`'s transport helper, and the compilers a build starts. The
-/// child leads a process group of its own, which catches most of them, and
-/// its descendants are found by parent too, since SwiftPM starts compilers
-/// in groups of their own. First SIGTERM, then SIGKILL for whatever is left
-/// after a grace period. A process the command left behind that still
-/// holds its output open counts as the command still running.
+/// child leads a session of its own, and everything it starts stays in that
+/// session, even in a process group of its own (SwiftPM starts compilers
+/// so) or after its parent has exited. First SIGTERM, then SIGKILL for
+/// whatever is left after a grace period. A process the command left
+/// behind that still holds its output open counts as the command still
+/// running. Deadlines run on a monotonic clock, so a change of the system
+/// clock doesn't move them.
 public struct ProcessCommandRunner: CommandRunner {
     /// Between the polite stop and the forced one.
-    static let grace: TimeInterval = 2
+    static let grace: Duration = .seconds(2)
 
     public init() {}
 
@@ -45,13 +47,13 @@ public struct ProcessCommandRunner: CommandRunner {
         close(writeEnd)
         _ = fcntl(readEnd, F_SETFL, fcntl(readEnd, F_GETFL) | O_NONBLOCK)
 
-        let deadline = command.timeout.map { Date().addingTimeInterval($0) }
+        let clock = ContinuousClock()
+        let deadline = command.timeout.map { clock.now + .seconds($0) }
         var output = Data()
         var exitStatus: Int32?
         var atEnd = false
-        var termSent: Date?
-        var killSent: Date?
-        var stopping = Set<pid_t>()
+        var termSent: ContinuousClock.Instant?
+        var killSent: ContinuousClock.Instant?
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
 
         while exitStatus == nil || !atEnd {
@@ -72,18 +74,14 @@ public struct ProcessCommandRunner: CommandRunner {
                 var status: Int32 = 0
                 if waitpid(pid, &status, WNOHANG) == pid { exitStatus = status }
             }
-            let now = Date()
+            let now = clock.now
             if termSent == nil, let deadline, now >= deadline {
-                // Found before anything is signalled: a process whose parent
-                // dies moves to launchd and can't be found by parent again.
-                stopping = descendants(of: [pid])
-                signal(SIGTERM, group: pid, processes: stopping)
+                signalSession(pid, SIGTERM)
                 termSent = now
-            } else if let sent = termSent, killSent == nil, now.timeIntervalSince(sent) >= grace {
-                stopping.formUnion(descendants(of: stopping.union([pid])))
-                signal(SIGKILL, group: pid, processes: stopping)
+            } else if let sent = termSent, killSent == nil, now - sent >= grace {
+                signalSession(pid, SIGKILL)
                 killSent = now
-            } else if let sent = killSent, now.timeIntervalSince(sent) >= grace {
+            } else if let sent = killSent, now - sent >= grace {
                 // Something outside the group holds the output open: stop
                 // listening. The child itself can't outlive SIGKILL.
                 if exitStatus == nil {
@@ -95,14 +93,15 @@ public struct ProcessCommandRunner: CommandRunner {
         }
         if termSent != nil {
             // The group may outlive its leader; nothing of it is left behind.
-            signal(SIGKILL, group: pid, processes: stopping)
+            signalSession(pid, SIGKILL)
         }
 
         return CommandResult(status: exitStatus.map(shellStatus) ?? -1, output: String(decoding: output, as: UTF8.self),
                              timedOut: termSent != nil)
     }
 
-    /// Starts the command in its own process group, stdin from /dev/null and
+    /// Starts the command as the leader of a new session (and so of a new
+    /// process group), stdin from /dev/null and
     /// stdout and stderr into `output`, no other descriptors inherited. Nil,
     /// with `errno` set, when it can't start.
     private static func spawn(_ command: Command, environment: [String: String], output: Int32) -> pid_t? {
@@ -117,14 +116,13 @@ public struct ProcessCommandRunner: CommandRunner {
         var attributes = posix_spawnattr_t(nil as OpaquePointer?)
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setpgroup(&attributes, 0)
         var noSignals = sigset_t()
         sigemptyset(&noSignals)
         posix_spawnattr_setsigmask(&attributes, &noSignals)
         var allSignals = sigset_t()
         sigfillset(&allSignals)
         posix_spawnattr_setsigdefault(&attributes, &allSignals)
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF
                                                     | POSIX_SPAWN_CLOEXEC_DEFAULT))
 
         let argv = ([command.executable] + command.arguments).map { strdup($0) } + [nil]
@@ -142,13 +140,19 @@ public struct ProcessCommandRunner: CommandRunner {
         return pid
     }
 
-    private static func signal(_ signal: Int32, group: pid_t, processes: Set<pid_t>) {
-        killpg(group, signal)
-        for process in processes { kill(process, signal) }
+    /// Sends `signal` to every process in the session `leader` started,
+    /// the leader too if it's still there. A session's id isn't reused
+    /// while any process is in it, so nothing else is hit.
+    private static func signalSession(_ leader: pid_t, _ signal: Int32) {
+        killpg(leader, signal)
+        for member in sessionMembers(leader) where member != getpid() {
+            kill(member, signal)
+        }
     }
 
-    /// Every process descended from `roots`, by parent process id.
-    static func descendants(of roots: Set<pid_t>) -> Set<pid_t> {
+    /// The processes in the session with id `session`. (macOS doesn't
+    /// filter by session itself: `KERN_PROC_SESSION` fails.)
+    static func sessionMembers(_ session: pid_t) -> [pid_t] {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
         var size = 0
         guard sysctl(&mib, 4, nil, &size, nil, 0) == 0 else { return [] }
@@ -157,16 +161,7 @@ public struct ProcessCommandRunner: CommandRunner {
         var table = [kinfo_proc](repeating: kinfo_proc(), count: size / stride + 64)
         size = table.count * stride
         guard sysctl(&mib, 4, &table, &size, nil, 0) == 0 else { return [] }
-        var children: [pid_t: [pid_t]] = [:]
-        for entry in table.prefix(size / stride) {
-            children[entry.kp_eproc.e_ppid, default: []].append(entry.kp_proc.p_pid)
-        }
-        var found = Set<pid_t>()
-        var queue = Array(roots)
-        while let next = queue.popLast() {
-            for child in children[next] ?? [] where found.insert(child).inserted { queue.append(child) }
-        }
-        return found
+        return table.prefix(size / stride).map(\.kp_proc.p_pid).filter { getsid($0) == session }
     }
 
     /// A wait status as a shell reports it: the exit code, or 128 plus the
