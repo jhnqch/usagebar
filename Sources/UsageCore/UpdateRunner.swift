@@ -1,30 +1,37 @@
 import Foundation
 
 /// A command to run: an absolute executable, its arguments, the directory
-/// to run it in, and environment variables to set on top of the app's.
+/// to run it in, environment variables to set on top of the app's, and how
+/// long it may take (nil: as long as it takes).
 public struct Command: Equatable, Sendable {
     public var executable: String
     public var arguments: [String]
     public var directory: String
     public var environment: [String: String]
+    public var timeout: TimeInterval?
 
-    public init(_ executable: String, _ arguments: [String], in directory: String, environment: [String: String] = [:]) {
+    public init(_ executable: String, _ arguments: [String], in directory: String, environment: [String: String] = [:],
+                timeout: TimeInterval? = nil) {
         self.executable = executable
         self.arguments = arguments
         self.directory = directory
         self.environment = environment
+        self.timeout = timeout
     }
 }
 
 /// How a command ended: its exit status (-1 when it couldn't start, e.g.
-/// the directory is gone) and its output and errors together.
+/// the directory is gone), its output and errors together, and whether it
+/// was stopped at its deadline.
 public struct CommandResult: Equatable, Sendable {
     public var status: Int32
     public var output: String
+    public var timedOut: Bool
 
-    public init(status: Int32, output: String) {
+    public init(status: Int32, output: String, timedOut: Bool = false) {
         self.status = status
         self.output = output
+        self.timedOut = timedOut
     }
 }
 
@@ -52,95 +59,160 @@ public struct UpdateRunner: Sendable {
     public var repository: GitHubRepository
     public var release: Release
     public var stagingApp: String
+    public var deadlines: Deadlines
     private let runner: any CommandRunner
 
-    public init(sourcePath: String, repository: GitHubRepository, release: Release, stagingApp: String, runner: any CommandRunner) {
+    /// How long each command may run before it's stopped and the update
+    /// fails: a stalled fetch or build would otherwise block every check
+    /// and update until the app quits.
+    public struct Deadlines: Equatable, Sendable {
+        /// `git fetch`, over the network.
+        public var fetch: TimeInterval
+        /// `scripts/build.sh`: a release build from scratch.
+        public var build: TimeInterval
+        /// Every other command, all local.
+        public var local: TimeInterval
+
+        public init(fetch: TimeInterval = 5 * 60, build: TimeInterval = 30 * 60, local: TimeInterval = 60) {
+            self.fetch = fetch
+            self.build = build
+            self.local = local
+        }
+    }
+
+    public init(sourcePath: String, repository: GitHubRepository, release: Release, stagingApp: String, runner: any CommandRunner,
+                deadlines: Deadlines = Deadlines()) {
         self.sourcePath = sourcePath
         self.repository = repository
         self.release = release
         self.stagingApp = stagingApp
+        self.deadlines = deadlines
         self.runner = runner
     }
 
     /// Runs the update; nil when the app at `stagingApp` is built and ready.
     /// `progress` hears each step as it starts and `log` every command and
     /// its output. The failure's `logPath` is left for the caller to fill.
+    /// A command stopped at its deadline fails the update there.
     public func run(progress: @Sendable (UpdateStep) async -> Void, log: @Sendable (String) -> Void) async -> UpdateFailure? {
-        func fail(_ message: String) -> UpdateFailure {
-            log("\n\(message)\n")
-            return UpdateFailure(message: message, logPath: nil)
+        do {
+            try await steps(progress: progress, log: log)
+            return nil
+        } catch {
+            log("\n\(error.message)\n")
+            return error
         }
-        func git(_ arguments: String..., logsOutput: Bool = true) async -> CommandResult {
-            await run(Command("/usr/bin/git", arguments, in: sourcePath, environment: ["GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"]),
-                      logsOutput: logsOutput, log: log)
+    }
+
+    private func steps(progress: @Sendable (UpdateStep) async -> Void, log: @Sendable (String) -> Void) async throws(UpdateFailure) {
+        func fail(_ message: String) -> UpdateFailure {
+            UpdateFailure(message: message, logPath: nil)
+        }
+        func git(_ arguments: String..., logsOutput: Bool = true, timeout: TimeInterval? = nil,
+                 name: String? = nil) async throws(UpdateFailure) -> CommandResult {
+            let command = Command("/usr/bin/git", arguments, in: sourcePath, environment: ["GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"],
+                                  timeout: timeout ?? deadlines.local)
+            return try await run(command, name: name ?? "git \(arguments[0])", logsOutput: logsOutput, log: log)
         }
 
         log("Updating to \(release.tag) in \(sourcePath)\n")
         await progress(.checkingSource)
-        let topLevel = await git("rev-parse", "--show-toplevel")
+        let topLevel = try await git("rev-parse", "--show-toplevel")
         guard topLevel.status == 0, topLevel.output.trimmingCharacters(in: .whitespacesAndNewlines) == sourcePath else {
-            return fail("The source folder is missing or isn't a git checkout.")
+            throw fail("The source folder is missing or isn't a git checkout.")
         }
         // The URL may hold credentials: only the owner/name parsed from it is logged.
-        let origin = await git("config", "--get", "remote.origin.url", logsOutput: false)
+        let origin = try await git("config", "--get", "remote.origin.url", logsOutput: false)
         guard origin.status == 0, let originRepository = GitHubRepository(remoteURL: origin.output) else {
-            return fail("The source folder's origin isn't a GitHub repository.")
+            throw fail("The source folder's origin isn't a GitHub repository.")
         }
         log("origin: \(originRepository)\n")
         guard originRepository.description.lowercased() == repository.description.lowercased() else {
-            return fail("The source folder's origin is \(originRepository), but this app was built from \(repository).")
+            throw fail("The source folder's origin is \(originRepository), but this app was built from \(repository).")
         }
-        let status = await git("status", "--porcelain", "--untracked-files=no")
+        let status = try await git("status", "--porcelain", "--untracked-files=no")
         guard status.status == 0, status.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return fail("The source folder has uncommitted changes. Commit or stash them, then try again.")
+            throw fail("The source folder has uncommitted changes. Commit or stash them, then try again.")
         }
-        let branch = await git("symbolic-ref", "--quiet", "--short", "HEAD")
+        let branch = try await git("symbolic-ref", "--quiet", "--short", "HEAD")
         if branch.status == 0 {
             let name = branch.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard name == "main" else { return fail("The source folder is on branch \(name), not main or a release tag.") }
+            guard name == "main" else { throw fail("The source folder is on branch \(name), not main or a release tag.") }
         } else {
-            let tag = await git("describe", "--tags", "--exact-match", "HEAD")
+            let tag = try await git("describe", "--tags", "--exact-match", "HEAD")
             guard tag.status == 0, Release(tag: tag.output.trimmingCharacters(in: .whitespacesAndNewlines), page: nil) != nil else {
-                return fail("The source folder isn't on main or a release tag.")
+                throw fail("The source folder isn't on main or a release tag.")
             }
         }
 
         await progress(.fetching)
-        guard await git("fetch", "--tags", "origin").status == 0 else {
-            return fail("Couldn't fetch from origin. Check your connection and try again.")
+        let fetch = try await git("fetch", "--tags", "origin", timeout: deadlines.fetch, name: "Fetching from origin")
+        guard fetch.status == 0 else {
+            // Only a failure to reach origin is worth retrying as it is; a
+            // rejected tag or a refused login fails the same way every time.
+            throw fail(Self.isUnreachable(fetch.output) ? "Couldn't reach origin. Check your connection and try again."
+                                                        : "Couldn't fetch from origin. The log says why.")
         }
         // The tag came from a parsed version, so it can't pass for an option.
         let ref = "refs/tags/\(release.tag)"
-        guard Release(tag: release.tag, page: nil) != nil, await git("rev-parse", "--verify", "--quiet", "\(ref)^{commit}").status == 0 else {
-            return fail("origin has no tag \(release.tag).")
+        guard Release(tag: release.tag, page: nil) != nil, try await git("rev-parse", "--verify", "--quiet", "\(ref)^{commit}").status == 0 else {
+            throw fail("origin has no tag \(release.tag).")
         }
 
         await progress(.checkingOut)
         // Git would otherwise overwrite an ignored local file the release tracks.
-        guard await git("checkout", "--quiet", "--no-overwrite-ignore", "--detach", ref).status == 0 else {
-            return fail("Couldn't check out \(release.tag). The log says why.")
+        guard try await git("checkout", "--quiet", "--no-overwrite-ignore", "--detach", ref).status == 0 else {
+            throw fail("Couldn't check out \(release.tag). The log says why.")
         }
 
         await progress(.building)
-        let build = Command("/bin/bash", ["scripts/build.sh"], in: sourcePath, environment: ["USAGEBAR_APP": stagingApp])
-        guard await run(build, logsOutput: true, log: log).status == 0 else {
-            return fail("The build failed.")
+        let build = Command("/bin/bash", ["scripts/build.sh"], in: sourcePath, environment: ["USAGEBAR_APP": stagingApp],
+                            timeout: deadlines.build)
+        guard try await run(build, name: "The build", logsOutput: true, log: log).status == 0 else {
+            throw fail("The build failed.")
         }
-        let built = Command("/bin/test", ["-x", stagingApp + "/Contents/MacOS/UsageBar"], in: sourcePath)
-        guard await run(built, logsOutput: true, log: log).status == 0 else {
-            return fail("The build didn't produce an app.")
+        let built = Command("/bin/test", ["-x", stagingApp + "/Contents/MacOS/UsageBar"], in: sourcePath, timeout: deadlines.local)
+        guard try await run(built, name: "Checking the build", logsOutput: true, log: log).status == 0 else {
+            throw fail("The build didn't produce an app.")
         }
         log("\nBuilt \(release.tag) at \(stagingApp)\n")
-        return nil
     }
 
-    private func run(_ command: Command, logsOutput: Bool, log: @Sendable (String) -> Void) async -> CommandResult {
-        let name = (command.executable as NSString).lastPathComponent
-        log("\n$ \(([name] + command.arguments).joined(separator: " "))\n")
+    /// Runs and logs `command`; one stopped at its deadline fails the
+    /// update with `name`: "The build took longer than 30 minutes, so it
+    /// was stopped."
+    private func run(_ command: Command, name: String, logsOutput: Bool,
+                     log: @Sendable (String) -> Void) async throws(UpdateFailure) -> CommandResult {
+        let executable = (command.executable as NSString).lastPathComponent
+        log("\n$ \(([executable] + command.arguments).joined(separator: " "))\n")
         let result = await runner.run(command)
         if logsOutput, !result.output.isEmpty { log(result.output.hasSuffix("\n") ? result.output : result.output + "\n") }
+        if result.timedOut, let timeout = command.timeout {
+            let limit = Self.durationText(timeout)
+            log("(stopped after \(limit))\n")
+            throw UpdateFailure(message: "\(name) took longer than \(limit), so it was stopped.", logPath: nil)
+        }
         if result.status != 0 { log("(exit \(result.status))\n") }
         return result
+    }
+
+    /// git's and ssh's words for not reaching the server at all.
+    private static func isUnreachable(_ output: String) -> Bool {
+        let signs = ["could not resolve host", "could not resolve hostname", "failed to connect", "couldn't connect to server",
+                     "connection timed out", "operation timed out", "connection refused", "network is unreachable",
+                     "no route to host", "connection reset"]
+        let text = output.lowercased()
+        return signs.contains { text.contains($0) }
+    }
+
+    /// "1 second", "45 seconds", "1 minute", "30 minutes".
+    static func durationText(_ interval: TimeInterval) -> String {
+        if interval >= 60, interval.truncatingRemainder(dividingBy: 60) == 0 {
+            let minutes = Int(interval / 60)
+            return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+        }
+        let seconds = Int(interval.rounded())
+        return seconds == 1 ? "1 second" : "\(seconds) seconds"
     }
 }
 
@@ -148,7 +220,9 @@ public struct UpdateRunner: Sendable {
 /// app: it waits for the running app's process to exit, copies the new
 /// bundle beside the installed one, renames the installed one aside and the
 /// copy into its place (putting the old one back if that fails), and opens
-/// whichever is there. A failed copy leaves the installed app as it was.
+/// whichever is there. A failed copy leaves the installed app as it was;
+/// when the old one can't be put back either, it's kept where it was set
+/// aside (`<app>.previous`) and opened from there.
 ///
 /// The reopened app can't see the helper's exit status, so the helper
 /// writes the release's tag to `statusFile` before the copy and removes it
@@ -194,12 +268,20 @@ public enum Relaunch {
         fi
       fi
     fi
-    rm -rf "$next" "$old"
+    rm -rf "$next"
     if [ $status = 0 ]; then
-      rm -rf "$new"
+      rm -rf "$old" "$new"
       rm -f "$status_file"
-    else
+    elif [ -e "$app" ]; then
+      rm -rf "$old"
       echo "Couldn't install $tag: the app at $app wasn't replaced."
+    elif [ -e "$old" ]; then
+      # Neither the new build nor the old one could be put in place: the
+      # set-aside copy is the only one left, so it stays and opens.
+      echo "Couldn't install $tag, or put the previous app back: it's at $old."
+      app="$old"
+    else
+      echo "Couldn't install $tag: there's no app at $app."
     fi
     "$opener" "$app"
     exit $status

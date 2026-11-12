@@ -80,9 +80,18 @@ private struct SourceCheckout {
         if let tag { git("tag", tag, in: directory) }
     }
 
-    func runner(to tag: String, source: String? = nil) -> UpdateRunner {
+    func runner(to tag: String, source: String? = nil, deadlines: UpdateRunner.Deadlines = .init()) -> UpdateRunner {
         UpdateRunner(sourcePath: source ?? self.source, repository: acme, release: release(tag), stagingApp: staging,
-                     runner: TestCommandRunner())
+                     runner: TestCommandRunner(), deadlines: deadlines)
+    }
+
+    /// Tags a new release on the remote whose `scripts/build.sh` is `build`.
+    func publish(_ tag: String, build: String) throws {
+        let work = root.file("publish-\(tag)")
+        git("clone", "-q", remote, work, in: root.path)
+        try write(work, "scripts/build.sh", build)
+        commit(work, tag, tag: tag)
+        git("push", "-q", "origin", "refs/tags/\(tag)", in: work)
     }
 
     var head: String { git("describe", "--tags", "--always", in: source).output.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -225,6 +234,43 @@ struct UpdateRunnerGitTests {
         #expect(recorder.steps.last == .building)
     }
 
+    @Test("a fetch that can't succeed on retry, like a moved tag, isn't called a connection problem")
+    func movedTag() async throws {
+        let checkout = try SourceCheckout()
+        defer { checkout.root.remove() }
+        git("tag", "-f", "v1.0.0", "main", in: checkout.remote)  // v1.0.0 re-pointed after the clone
+        let recorder = Recorder()
+        let failure = await recorder.run(checkout.runner(to: "v1.1.0"))
+        #expect(failure?.message == "Couldn't fetch from origin. The log says why.")
+        #expect(recorder.log.contains("would clobber existing tag"))
+        #expect(checkout.head == "v1.0.0")
+    }
+
+    @Test("a build that outlives its deadline is stopped, with what it started, and the update fails")
+    func buildTimesOut() async throws {
+        let checkout = try SourceCheckout()
+        defer { checkout.root.remove() }
+        let pidFile = checkout.root.file("build-child.pid")
+        try checkout.publish("v1.3.0", build: "#!/bin/bash\necho compiling\nsleep 30 &\necho $! > '\(pidFile)'\nwait\n")
+        let recorder = Recorder()
+        let started = Date()
+        let failure = await recorder.run(checkout.runner(to: "v1.3.0", deadlines: .init(build: 1)))
+        #expect(failure?.message == "The build took longer than 1 second, so it was stopped.")
+        #expect(Date().timeIntervalSince(started) < 20)
+        #expect(recorder.steps.last == .building)
+        #expect(recorder.log.contains("compiling"))
+        #expect(recorder.log.contains("(stopped after 1 second)"))
+        #expect(!FileManager.default.fileExists(atPath: checkout.staging))
+        let child = try #require(Int32(try String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        var gone = false
+        for _ in 0..<40 where !gone {
+            gone = kill(child, 0) != 0
+                || shell("/bin/ps", ["-o", "stat=", "-p", String(child)], in: "/").output.trimmingCharacters(in: .whitespaces).hasPrefix("Z")
+            if !gone { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(gone)
+    }
+
     @Test("a tag origin doesn't have is reported")
     func unknownTag() async throws {
         let checkout = try SourceCheckout()
@@ -297,16 +343,66 @@ struct UpdateRunnerCommandTests {
         #expect(failure?.message == "The build didn't produce an app.")
     }
 
-    @Test("a failed fetch stops before checkout")
-    func fetchFails() async {
+    @Test("a fetch that couldn't reach origin says to check the connection", arguments: [
+        "fatal: unable to access 'https://github.com/acme/usagebar.git/': Could not resolve host: github.com",
+        "fatal: unable to access 'https://github.com/acme/usagebar.git/': Failed to connect to github.com port 443 after 3 ms: Couldn't connect to server",
+        "ssh: connect to host github.com port 22: Operation timed out",
+        "ssh: Could not resolve hostname github.com: nodename nor servname provided, or not known",
+    ])
+    func fetchUnreachable(output: String) async {
         var answers = Self.clean
-        answers["fetch --tags origin"] = CommandResult(status: 128, output: "fatal: unable to access")
+        answers["fetch --tags origin"] = CommandResult(status: 128, output: output)
         let commands = FakeCommands(answers)
-        let runner = UpdateRunner(sourcePath: "/src/usagebar", repository: acme, release: release("v1.1.0"),
-                                  stagingApp: "/support/Update/UsageBar.app", runner: commands)
-        let failure = await Recorder().run(runner)
-        #expect(failure?.message == "Couldn't fetch from origin. Check your connection and try again.")
+        let failure = await Recorder().run(Self.runner(commands))
+        #expect(failure?.message == "Couldn't reach origin. Check your connection and try again.")
         #expect(!commands.ran.contains { $0.contains("checkout") })
+    }
+
+    @Test("any other failed fetch points at the log", arguments: [
+        " ! [rejected]        v1.0.0     -> v1.0.0  (would clobber existing tag)",
+        "fatal: unable to access 'https://github.com/acme/usagebar.git/': The requested URL returned error: 403",
+        "fatal: couldn't find remote ref refs/heads/main",
+    ])
+    func fetchFails(output: String) async {
+        var answers = Self.clean
+        answers["fetch --tags origin"] = CommandResult(status: 1, output: output)
+        let commands = FakeCommands(answers)
+        let failure = await Recorder().run(Self.runner(commands))
+        #expect(failure?.message == "Couldn't fetch from origin. The log says why.")
+        #expect(!commands.ran.contains { $0.contains("checkout") })
+    }
+
+    private static func runner(_ commands: FakeCommands, deadlines: UpdateRunner.Deadlines = .init()) -> UpdateRunner {
+        UpdateRunner(sourcePath: "/src/usagebar", repository: acme, release: release("v1.1.0"),
+                     stagingApp: "/support/Update/UsageBar.app", runner: commands, deadlines: deadlines)
+    }
+
+    @Test("every command has a deadline: the fetch and the build their own, local git one minute")
+    func deadlines() async {
+        let commands = FakeCommands(Self.clean)
+        _ = await Recorder().run(Self.runner(commands))
+        let byLine = Dictionary(commands.commands.map { (([$0.executable] + $0.arguments).joined(separator: " "), $0.timeout) }) { a, _ in a }
+        #expect(byLine["/usr/bin/git fetch --tags origin"] == .some(5 * 60))
+        #expect(byLine["/bin/bash scripts/build.sh"] == .some(30 * 60))
+        #expect(byLine["/usr/bin/git status --porcelain --untracked-files=no"] == .some(60))
+        #expect(commands.commands.allSatisfy { $0.timeout != nil })
+    }
+
+    @Test("a command stopped at its deadline fails the update with what took too long", arguments: [
+        ("fetch --tags origin", "Fetching from origin took longer than 5 minutes, so it was stopped."),
+        ("status --porcelain --untracked-files=no", "git status took longer than 1 minute, so it was stopped."),
+        ("checkout --quiet --no-overwrite-ignore --detach refs/tags/v1.1.0", "git checkout took longer than 1 minute, so it was stopped."),
+        ("scripts/build.sh", "The build took longer than 30 minutes, so it was stopped."),
+    ])
+    func timedOut(command: String, message: String) async {
+        var answers = Self.clean
+        answers[command] = CommandResult(status: 143, output: "partial output", timedOut: true)
+        let commands = FakeCommands(answers)
+        let recorder = Recorder()
+        let failure = await recorder.run(Self.runner(commands))
+        #expect(failure?.message == message)
+        #expect(commands.ran.last?.hasSuffix(command) == true)  // nothing runs after it
+        #expect(recorder.log.contains("partial output"))
     }
 }
 
@@ -416,6 +512,34 @@ struct RelaunchTests {
         #expect(FileManager.default.fileExists(atPath: staged))
         #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + "\n")
         #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
+    }
+
+    @Test("when the swap and the putting back both fail, the previous app is kept, opened and pointed at")
+    func rollbackFails() throws {
+        let dir = try TempDirectory()
+        defer { dir.remove() }
+        let app = dir.file("UsageBar.app"), staged = dir.file("staging/UsageBar.app")
+        try makeApp(app, "old")
+        try makeApp(staged, "new")
+        try dir.write("open", "#!/bin/sh\necho \"$1\" > \"$(dirname \"$0\")/opened\"\n", executable: true)
+        // The first rename (the installed app aside) works; every one after it fails.
+        try dir.write("bin/mv", """
+        #!/bin/sh
+        if [ -e "\(dir.file("moved"))" ]; then exit 1; fi
+        touch "\(dir.file("moved"))"
+        exec /bin/mv "$@"
+        """, executable: true)
+        let command = Relaunch.command(waitingFor: 999_999, staged: staged, app: app, tag: "v1.1.0", statusFile: dir.file("update-failed"),
+                                       opener: dir.file("open"))
+        let result = shell(command.executable, command.arguments, in: command.directory,
+                           environment: ["PATH": dir.file("bin") + ":/usr/bin:/bin"])
+        #expect(result.status != 0)
+        #expect(!FileManager.default.fileExists(atPath: app))
+        #expect(build(app + ".previous") == "old")
+        #expect(result.output.contains(app + ".previous"), "\(result.output)")
+        #expect(try String(contentsOfFile: dir.file("opened"), encoding: .utf8) == app + ".previous\n")
+        #expect(failedTag(dir.file("update-failed")) == "v1.1.0")
+        #expect(FileManager.default.fileExists(atPath: staged))
     }
 
     @Test("the failed tag is written before the copy, so a disk too full for anything more still reports it")

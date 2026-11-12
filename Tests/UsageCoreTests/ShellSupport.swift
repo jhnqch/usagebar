@@ -11,8 +11,11 @@ struct TestCommandRunner: CommandRunner {
         "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@example.com",
     ]
 
+    /// The app's runner, with git kept away from the user's own config.
     func run(_ command: Command) async -> CommandResult {
-        shell(command.executable, command.arguments, in: command.directory, environment: command.environment)
+        var command = command
+        command.environment = Self.isolatedEnvironment.merging(command.environment) { $1 }
+        return await ProcessCommandRunner().run(command)
     }
 }
 
