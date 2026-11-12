@@ -41,10 +41,10 @@ import Foundation
 ///   "copilotInternal": { "status": 200, "body": { … } } }
 /// ```
 ///
-/// A refused `GET /user` is a rejected token; a 429, 5xx or network error on
-/// it or a report keeps the last reading and backs off. Anything else a
-/// report or the meter endpoint answers degrades only its own row, with a
-/// note saying why.
+/// A refused `GET /user` is a rejected token; a 429 or 5xx (a rate-limit
+/// 403 included) or a network error on any request keeps the last reading,
+/// and the 429 or 5xx backs off. Anything else a report or the meter
+/// endpoint answers degrades only its own row, with a note saying why.
 public enum CopilotAPI: KeyAPI {
     public static let id = "copilot"
     public static let name = "GitHub Copilot"
@@ -91,7 +91,17 @@ public enum CopilotAPI: KeyAPI {
             }
         }
         if client.options.contains(meterOption.id) {
-            combined["copilotInternal"] = part(await client.get(URL(string: "https://api.github.com/copilot_internal/user")!, headers: internalHeaders))
+            let answer = rateLimitAsTransient(await client.get(URL(string: "https://api.github.com/copilot_internal/user")!, headers: internalHeaders))
+            // Busy, down or unreachable keeps the last reading, meter and
+            // all, as for the other requests; a refusal is the meter's own.
+            switch answer {
+            case .networkError, .blocked, .noCredentials:
+                return answer
+            case let .response(status, _, _) where status == 429 || (500...599).contains(status):
+                return answer
+            case .response:
+                combined["copilotInternal"] = part(answer)
+            }
         }
         let body = (try? JSONSerialization.data(withJSONObject: combined)) ?? Data("{}".utf8)
         return .response(status: 200, body: body, retryAfter: nil)

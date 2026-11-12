@@ -381,6 +381,47 @@ struct CopilotRequestTests {
         #expect(poller.provider.reading == good)
     }
 
+    @Test("a rate-limited or failing meter request keeps the last reading, meter included, and backs off like the other requests", arguments: [
+        PollOutcome.response(status: 403, body: Data(#"{ "message": "API rate limit exceeded for user ID 1." }"#.utf8), retryAfter: 1200),
+        .response(status: 429, body: Data()),
+        .response(status: 502, body: Data("<html>".utf8)),
+    ])
+    func meterTransient(failure: PollOutcome) async throws {
+        let transport = FakeTransport(user, report, report, quota)
+        let clock = FakeClock(date("2026-10-31T18:00:00-07:00"))
+        let poller = KeyPoller<CopilotAPI>(store: MemoryKeyStore(["copilot": fakeKey]), transport: transport, now: { clock.now })
+        poller.setOptions([CopilotAPI.meterOption.id])
+        await poller.poll(.timer)
+        let good = try #require(poller.provider.reading)
+        #expect(good.quota?.premium != nil)
+
+        transport.answer(user, report, report, failure)
+        clock.now += 6 * 60
+        await poller.poll(.timer)
+        #expect(transport.requests.count == 8)
+        #expect(poller.provider.reading == good)
+        #expect(poller.provider.problem == nil)
+        let section = try #require(UsageEngine.snapshot(from: Readings([poller.provider]), now: clock.now, timeZone: losAngeles)["copilot"])
+        #expect(section.note == nil)
+        #expect(!poller.isDue(.timer, at: clock.now + 9 * 60))
+    }
+
+    @Test("a network error on the meter request keeps the last reading without backing off")
+    func meterNetworkError() async throws {
+        let transport = FakeTransport(user, report, report, quota)
+        let clock = FakeClock(date("2026-10-31T18:00:00-07:00"))
+        let poller = KeyPoller<CopilotAPI>(store: MemoryKeyStore(["copilot": fakeKey]), transport: transport, now: { clock.now })
+        poller.setOptions([CopilotAPI.meterOption.id])
+        await poller.poll(.timer)
+        let good = try #require(poller.provider.reading)
+
+        transport.answer(user, report, report, .networkError)
+        clock.now += 6 * 60
+        await poller.poll(.timer)
+        #expect(poller.provider.reading == good)
+        #expect(poller.isDue(.popover, at: clock.now + 60))
+    }
+
     @Test("Test connection needs a report it could read, empty or not")
     func connectionNeedsAReport() async {
         let notFound = PollOutcome.response(status: 404, body: Data(#"{ "message": "Not Found" }"#.utf8))
