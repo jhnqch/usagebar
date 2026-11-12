@@ -125,7 +125,32 @@ struct ReleaseScriptTests {
             git("add", "-A", in: work)
             git("commit", "-q", "-m", "first", in: work)
             git("push", "-q", "origin", "main", in: work)
-            try root.write("bin/gh", "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$(dirname \"$0\")/../gh-args\"\n", executable: true)
+            // `gh`: signed in unless `gh-signed-out` exists; `release create`
+            // fails while `gh-fails` exists, else records its arguments in
+            // `gh-args` and the release as made; `release view` finds it.
+            try root.write("bin/gh", #"""
+                #!/bin/sh
+                state="$(dirname "$0")/.."
+                case "$1 $2" in
+                  "auth status") [ ! -e "$state/gh-signed-out" ] || { echo "You are not logged into any GitHub hosts." >&2; exit 1; } ;;
+                  "release view") [ -e "$state/gh-released" ] || { echo "release not found" >&2; exit 1; } ;;
+                  "release create")
+                    [ ! -e "$state/gh-fails" ] || { echo "HTTP 401: Bad credentials" >&2; exit 1; }
+                    printf '%s\n' "$@" > "$state/gh-args"
+                    touch "$state/gh-released" ;;
+                  *) echo "unexpected gh $*" >&2; exit 2 ;;
+                esac
+                """#, executable: true)
+        }
+
+        /// Creates (or removes) one of the fake `gh`'s state files.
+        func gh(_ state: String, _ on: Bool = true) throws {
+            if on { try root.write(state, "") } else { try FileManager.default.removeItem(atPath: root.file(state)) }
+        }
+
+        /// What `tag` names on origin (a tag object for an annotated tag).
+        func originTag(_ tag: String) -> String {
+            git("rev-parse", "-q", "--verify", "refs/tags/\(tag)", in: origin).output
         }
 
         func release(_ arguments: String...) -> CommandResult {
@@ -187,16 +212,72 @@ struct ReleaseScriptTests {
         #expect(!repo.hasTag("v1.2.3", in: repo.work))
     }
 
-    @Test("a tag that already exists, here or on origin, is refused")
+    @Test("a tag that already exists at another commit, here or on origin, is refused")
     func exists() throws {
         let repo = try Repo()
         defer { repo.root.remove() }
         git("tag", "v1.0.0", in: repo.work)
-        #expect(repo.release("v1.0.0").output.contains("v1.0.0 already exists"))
-        git("tag", "v1.1.0", "main", in: repo.origin)
+        try repo.root.write("work/README", "second")
+        git("add", "-A", in: repo.work)
+        git("commit", "-q", "-m", "second", in: repo.work)
+        git("push", "-q", "origin", "main", in: repo.work)
+        #expect(repo.release("v1.0.0").output.contains("v1.0.0 already exists at another commit"))
+        git("tag", "v1.1.0", "main~1", in: repo.origin)
         let result = repo.release("v1.1.0")
         #expect(result.status != 0)
-        #expect(result.output.contains("v1.1.0 already exists"))
+        #expect(result.output.contains("v1.1.0 already exists at another commit"))
+        #expect(repo.ghArguments == nil)
+    }
+
+    @Test("gh signed out is refused before anything is tagged")
+    func signedOut() throws {
+        let repo = try Repo()
+        defer { repo.root.remove() }
+        try repo.gh("gh-signed-out")
+        let result = repo.release("v1.2.3")
+        #expect(result.status != 0)
+        #expect(result.output.contains("gh auth login"), "\(result.output)")
+        #expect(!repo.hasTag("v1.2.3", in: repo.work))
+        #expect(!repo.hasTag("v1.2.3", in: repo.origin))
+    }
+
+    @Test("a rerun after the release step failed creates the release from the tag already pushed, without retagging")
+    func rerun() throws {
+        let repo = try Repo()
+        defer { repo.root.remove() }
+        try repo.gh("gh-fails")
+        #expect(repo.release("v1.2.3").status != 0)
+        let pushed = repo.originTag("v1.2.3")
+        #expect(!pushed.isEmpty)
+
+        try repo.gh("gh-fails", false)
+        let result = repo.release("v1.2.3")
+        #expect(result.status == 0, "\(result.output)")
+        #expect(repo.originTag("v1.2.3") == pushed)
+        #expect(repo.ghArguments?.prefix(3) == ["release", "create", "v1.2.3"])
+    }
+
+    @Test("a rerun after the tag push failed pushes the same tag and releases")
+    func rerunUnpushed() throws {
+        let repo = try Repo()
+        defer { repo.root.remove() }
+        git("tag", "--annotate", "v1.2.3", "--message", "UsageBar v1.2.3", in: repo.work)
+        let made = git("rev-parse", "refs/tags/v1.2.3", in: repo.work).output
+        let result = repo.release("v1.2.3")
+        #expect(result.status == 0, "\(result.output)")
+        #expect(repo.originTag("v1.2.3") == made)
+        #expect(repo.ghArguments?.prefix(3) == ["release", "create", "v1.2.3"])
+    }
+
+    @Test("a tag that's already released is refused")
+    func alreadyReleased() throws {
+        let repo = try Repo()
+        defer { repo.root.remove() }
+        #expect(repo.release("v1.2.3").status == 0)
+        try FileManager.default.removeItem(atPath: repo.root.file("gh-args"))
+        let result = repo.release("v1.2.3")
+        #expect(result.status != 0)
+        #expect(result.output.contains("v1.2.3 is already released"), "\(result.output)")
         #expect(repo.ghArguments == nil)
     }
 
