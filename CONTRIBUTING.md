@@ -143,8 +143,8 @@ It tags the current commit with an annotated `v1.2.0`, pushes the tag and create
 How updates work, for reviewers:
 
 - `scripts/build.sh` records `scripts/build-info.sh`'s output in Info.plist: `UsageBarVersion` (`git describe --tags`), `UsageBarRepository` (origin's GitHub `owner/name`, never the URL, which can hold credentials) and `UsageBarSourcePath`.
-- `Updater` (in `UsageCore`) decides when to check, what the popover and the Updates menu say, and whether to install automatically. `GitHubRelease` builds the request and reads the answer. `UpdateRunner` runs the guarded `git fetch --tags origin` → `git checkout --detach <tag>` → `scripts/build.sh` into a staging app, and `Relaunch` swaps that app into place once the running app has quit. They're tested with a fake clock and transport, a fake command runner, and temp git repos.
-- `UpdateController` (in `Sources/UsageBar`) is the thin adapter: `URLSession`, `Process`, the log file and the relaunch.
+- `Updater` (in `UsageCore`) decides when to check, what the popover and the Updates menu say, and whether to install automatically. `GitHubRelease` builds the request and reads the answer. `UpdateRunner` runs the guarded `git fetch --tags origin` → `git checkout --detach <tag>` → `scripts/build.sh` into a staging app, and `Relaunch` swaps that app into place once the running app has quit. `ProcessCommandRunner` runs each command in a process group of its own and stops the group at the command's deadline. They're tested with a fake clock and transport, a fake command runner, and temp git repos.
+- `UpdateController` (in `Sources/UsageBar`) is the thin adapter: `URLSession`, the log file and the relaunch.
 
 ## Pull requests
 

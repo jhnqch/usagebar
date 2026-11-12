@@ -149,7 +149,7 @@ UsageBar records where it was built from: the clone's path, the GitHub repo `ori
 
 1. When a newer release is out, the popover shows **Update to vX.Y.Z** above the footer.
 2. Click **Update**. UsageBar checks the release out in your clone (`git fetch --tags origin`, then `git checkout --detach vX.Y.Z`), builds it with `scripts/build.sh`, and relaunches into the new version. Your installed app is replaced only after the build succeeds.
-3. If something fails, the popover says why and where the log is: `~/Library/Application Support/UsageBar/update.log`. That includes the last step: if the new build can't replace the installed app (for example, because the disk is full), the old version reopens and says so.
+3. If something fails, the popover says why and where the log is: `~/Library/Application Support/UsageBar/update.log`. That includes the last step: if the new build can't replace the installed app (for example, because the disk is full), the old version reopens and says so. A fetch that stalls for 5 minutes, or a build for 30, is stopped and reported the same way.
 
 The update refuses to run when your clone has uncommitted changes, or is on a branch other than `main` and not on a release tag. It never deletes untracked files.
 
@@ -179,7 +179,7 @@ These steps remove everything UsageBar creates. Run the commands in Terminal.
    rm -rf ~/Applications/UsageBar.app ~/Applications/UsageBar.app.new ~/Applications/UsageBar.app.previous
    ```
 
-   (The `.new` and `.previous` copies exist only if an update was interrupted while swapping the app. If you set `USAGEBAR_APP`, use that path.)
+   (The `.new` and `.previous` copies exist only if an update was interrupted while swapping the app, or couldn't put the old app back: then it opens from `.previous`. If you set `USAGEBAR_APP`, use that path.)
 6. **Keychain items** left over from step 1. Each saved key is a generic password with the service `io.github.jhnqch.usagebar.api-key`, one per provider. This deletes them all (macOS may ask for your password):
 
    ```sh
