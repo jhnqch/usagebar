@@ -10,7 +10,7 @@ You need macOS 26 and Swift 6.2 or later; the Command Line Tools are enough.
 scripts/test.sh                      # the whole suite
 scripts/test.sh --filter DeepSeek    # one suite (extra arguments go to `swift test`)
 scripts/build.sh                     # packages ~/Applications/UsageBar.app
-USAGEBAR_APP=/tmp/UsageBar.app scripts/build.sh   # package somewhere else
+USAGEBAR_APP=/tmp/UsageBar.app scripts/build.sh   # package somewhere else (an absolute .app path)
 ```
 
 Use `scripts/test.sh`, not plain `swift test`. Without full Xcode, Swift Testing needs the Command Line Tools' framework and rpath flags, which the script adds.
@@ -138,7 +138,7 @@ Installed apps update from GitHub Releases: each checks its repo's latest releas
 scripts/release.sh v1.2.0
 ```
 
-It tags the current commit with an annotated `v1.2.0`, pushes the tag and creates the GitHub Release with generated notes (it needs the [GitHub CLI](https://cli.github.com), signed in). It refuses a tag that isn't `vX.Y.Z`, uncommitted changes, a branch other than `main`, a `main` that differs from `origin/main`, and a tag that already exists. Drafts and prereleases are never offered to installed apps.
+It tags the current commit with an annotated `v1.2.0`, pushes the tag and creates the GitHub Release with generated notes. It needs the [GitHub CLI](https://cli.github.com), signed in (`gh auth login`), and checks that before tagging. It refuses a tag that isn't `vX.Y.Z`, uncommitted changes, a branch other than `main`, a `main` that differs from `origin/main`, a tag that already exists at another commit and a tag that's already released. If a run fails after tagging (the push or the release step), run the same command again: it reuses the tag already on this commit, pushes it if needed and creates the release. Drafts and prereleases are never offered to installed apps.
 
 How updates work, for reviewers:
 
