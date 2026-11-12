@@ -140,9 +140,10 @@ public enum ClaudeTranscript {
     }
 }
 
-/// A token count, or 0 when it's missing or not a non-negative whole number.
+/// A token count, or 0 when it's missing or not a non-negative whole number,
+/// clamped to `TokenCounts.maximum`.
 func tokenCount<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Int {
-    max(0, (try? c.decodeIfPresent(Int.self, forKey: key)) ?? 0)
+    TokenCounts.clamped((try? c.decodeIfPresent(Int.self, forKey: key)) ?? 0)
 }
 
 /// The incremental scan of Claude Code's transcripts.

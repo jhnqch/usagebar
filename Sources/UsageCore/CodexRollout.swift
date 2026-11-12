@@ -229,7 +229,8 @@ public enum CodexRollout {
         private struct Unreadable: Error {}
 
         /// Unreadable unless it has input and output counts and every count
-        /// it has is a whole number, never negative.
+        /// it has is a whole number, never negative. Each is clamped to
+        /// `TokenCounts.maximum`.
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: Usage.CodingKeys.self)
             input = try c.decode(Int.self, forKey: .input)
@@ -237,6 +238,10 @@ public enum CodexRollout {
             cacheWrite = try c.decodeIfPresent(Int.self, forKey: .cacheWrite)
             output = try c.decode(Int.self, forKey: .output)
             guard min(input, cached ?? 0, cacheWrite ?? 0, output) >= 0 else { throw Unreadable() }
+            input = TokenCounts.clamped(input)
+            cached = cached.map(TokenCounts.clamped)
+            cacheWrite = cacheWrite.map(TokenCounts.clamped)
+            output = TokenCounts.clamped(output)
         }
     }
 

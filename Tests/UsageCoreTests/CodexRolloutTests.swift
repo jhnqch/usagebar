@@ -183,6 +183,28 @@ struct CodexRolloutTests {
         #expect(entries.map(\.tokens) == [TokenCounts(input: 10_000, cacheRead: 30_000, output: 400)])
     }
 
+    @Test("a token count near Int.max doesn't crash the chart or lose the rest of the file")
+    func absurdCount() throws {
+        // Half of Int.max, so the line's own `total_tokens` still fits; moving
+        // the running total on by the next response would overflow.
+        let absurd = Int.max / 2
+        let entries = codexUsage([[
+            Rollout.sessionMeta(id: "thread-1", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.turnContext(model: "gpt-6-astra", at: "2026-10-09T10:00:00-07:00"),
+            Rollout.tokenCount(at: "2026-10-09T10:00:05-07:00", total: codexTokens(input: 1_000, output: 10),
+                               last: codexTokens(input: 1_000, output: 10)),
+            Rollout.tokenCount(at: "2026-10-09T10:01:00-07:00", total: codexTokens(input: absurd, output: absurd),
+                               last: codexTokens(input: absurd, output: absurd)),
+            // No running total: the response's own usage moves it on.
+            Rollout.tokenCount(at: "2026-10-09T10:02:00-07:00", total: nil, last: codexTokens(input: 500, output: 5)),
+        ]])
+        #expect(entries.count == 3)
+        #expect(entries.first?.tokens == TokenCounts(input: 1_000, output: 10))
+        #expect(entries.last?.tokens == TokenCounts(input: 500, output: 5))
+        let chart = try chart(entries + entries.map { var copy = $0; copy.id += "-copy"; return copy })
+        #expect(chart.legend.count == 1)
+    }
+
     @Test("missing, extra and mistyped fields cost only what they carry; unreadable lines are skipped")
     func tolerantDecoding() throws {
         let lines = [

@@ -20,6 +20,16 @@ public struct TokenCounts: Equatable, Sendable {
         self.output = output
     }
 
+    /// The most any one decoded count can be: a trillion tokens, far beyond
+    /// any real reply or thread. A corrupt line with a count near `Int.max`
+    /// would otherwise overflow, and trap, the first sum it's in.
+    public static let maximum = 1_000_000_000_000
+
+    /// A decoded count, never negative or above `maximum`.
+    static func clamped(_ count: Int) -> Int {
+        min(max(0, count), maximum)
+    }
+
     /// Every token, cache reads included.
     public var total: Int { input + cacheWrite5m + cacheWrite1h + cacheRead + output }
 
